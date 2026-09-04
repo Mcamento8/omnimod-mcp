@@ -23,6 +23,14 @@ import { fileURLToPath } from "node:url";
 /** Sentinel the exporter substitutes for the real map name. */
 export const MAP_TOKEN = "__OMNIMOD_MAP__";
 
+/**
+ * Normalize line endings to LF. Pack templates and map documents may carry
+ * CRLF when the MCP package was checked out on Windows (or when a user
+ * hand-edits a doc in Notepad); every regex below assumes `\n`, so all text
+ * is funneled through here right after it is read from disk.
+ */
+export const nl = (s: string): string => s.replace(/\r\n/g, "\n");
+
 /** Mirrors MapDevWorkspace / MapDevWorkspaceDocs layout constants. */
 export const LAYOUT = {
   DEV_DIR: "_dev",
@@ -106,7 +114,7 @@ async function readTree(root: string, prefix = ""): Promise<PackFile[]> {
     const abs = join(root, e.name);
     const rel = prefix ? `${prefix}/${e.name}` : e.name;
     if (e.isDirectory()) out.push(...(await readTree(abs, rel)));
-    else out.push({ rel, text: await readFile(abs, "utf8") });
+    else out.push({ rel, text: nl(await readFile(abs, "utf8")) });
   }
   return out;
 }
@@ -796,7 +804,7 @@ export async function patchOverviewSection(
   const abs = join(mapDir, LAYOUT.DEV_DIR, LAYOUT.OVERVIEW_FILE);
   let text: string;
   try {
-    text = await readFile(abs, "utf8");
+    text = nl(await readFile(abs, "utf8"));
   } catch {
     const src = await loadPackSource();
     const seed = src.living.find((f) => f.rel === LAYOUT.OVERVIEW_FILE);
