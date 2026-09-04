@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "omnimod": {
-      "command": "node",
-      "args": ["C:/path/to/OmniMod/mcp/dist/index.js"]
-    }
-  }
-}
