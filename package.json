@@ -1,0 +1,64 @@
+{
+  "name": "omnimod-mcp",
+  "version": "1.2.0",
+  "description": "Official OmniMod MCP server — turns any AI agent into a professional map builder and Forge 1.20.1 mod author. 51 tools for map building, game control, dual-mode testing, and mod scaffolding. Free, local-first, works with Claude, Cursor, Cline, Kilo and any MCP client.",
+  "type": "module",
+  "private": false,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Mcamento8/omnimod-mcp"
+  },
+  "homepage": "https://github.com/Mcamento8/omnimod-mcp",
+  "bugs": {
+    "url": "https://github.com/Mcamento8/omnimod-mcp/issues"
+  },
+  "license": "MIT",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "minecraft",
+    "omnimod",
+    "forge",
+    "map-builder",
+    "ai-agent",
+    "claude",
+    "cursor"
+  ],
+  "files": [
+    "dist",
+    "assets",
+    "docs",
+    "examples",
+    "tools",
+    "README.md",
+    "AGENT_BRIEFING.md",
+    "PUBLISHING.md",
+    ".env.example"
+  ],
+  "bin": {
+    "omnimod-mcp": "dist/index.js"
+  },
+  "main": "dist/index.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "watch": "tsc -p tsconfig.json --watch",
+    "start": "node dist/index.js",
+    "selfcheck": "node dist/index.js selfcheck",
+    "e2e": "node scripts/e2e.mjs",
+    "live-test": "node scripts/live-test.mjs",
+    "prepare": "npm run build",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "fflate": "0.8.2",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "22.13.1",
+    "typescript": "5.7.3"
+  }
+}
