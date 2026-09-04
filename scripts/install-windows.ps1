@@ -6,9 +6,10 @@
   dependencies, builds, verifies, and registers a GLOBAL `omnimod-mcp`
   command that works from ANY folder in ANY terminal.
 
-  Run this single command in PowerShell (normal user, NO admin needed):
+  Run this single command in cmd or PowerShell (normal user, NO admin needed).
+  Paste it as ONE line:
 
-    powershell -NoProfile -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/Mcamento8/omnimod-mcp/main/scripts/install-windows.ps1 | iex"
+    powershell -NoProfile -ExecutionPolicy Bypass -c "$f=$env:TEMP+'\omnimod-install.ps1'; irm https://raw.githubusercontent.com/Mcamento8/omnimod-mcp/main/scripts/install-windows.ps1 -OutFile $f; & $f"
 
   Re-running it later safely UPDATES the installation (git pull + rebuild).
 
@@ -23,7 +24,12 @@ param(
   [switch]$SkipTests
 )
 
-$ErrorActionPreference = "Stop"
+# NOTE: deliberately "Continue", NOT "Stop". Native tools (git/npm) write
+# progress to stderr; if a caller redirects our stderr (2>&1, Tee-Object,
+# remote sessions) every such line would otherwise TERMINATE the install
+# mid-way. Correctness comes from the explicit $LASTEXITCODE / Test-Path
+# checks after every critical step below — never from the preference.
+$ErrorActionPreference = "Continue"
 $RepoUrl = "https://github.com/Mcamento8/omnimod-mcp.git"
 $Branch = "main"
 
@@ -82,11 +88,17 @@ Step 3 "Downloading OmniMod MCP ..."
 if ((Test-Path -LiteralPath (Join-Path $InstallDir ".git"))) {
   Write-Host "  Existing install found — updating (git pull) ..."
   & $gitExe -C $InstallDir fetch origin $Branch
+  if ($LASTEXITCODE -ne 0) { Fail "git fetch failed — check your internet connection and re-run." }
   & $gitExe -C $InstallDir reset --hard "origin/$Branch"
+  if ($LASTEXITCODE -ne 0) { Fail "git reset failed — delete $InstallDir and re-run." }
 } else {
   if (Test-Path -LiteralPath $InstallDir) { Remove-Item -LiteralPath $InstallDir -Recurse -Force }
   New-Item -ItemType Directory -Path (Split-Path $InstallDir) -Force | Out-Null
   & $gitExe clone --branch $Branch --depth 1 $RepoUrl $InstallDir
+  if ($LASTEXITCODE -ne 0) { Fail "git clone failed — check your internet connection and re-run." }
+}
+if (-not (Test-Path -LiteralPath (Join-Path $InstallDir "package.json"))) {
+  Fail "Download incomplete (package.json missing) — delete $InstallDir and re-run."
 }
 Ok "sources ready at $InstallDir"
 
@@ -100,7 +112,9 @@ try {
 
   Step 5 "Building (npm run build) ..."
   & npm run build
-  if ($LASTEXITCODE -ne 0) { Fail "build failed — please report this at https://github.com/Mcamento8/omnimod-mcp/issues" }
+  if (($LASTEXITCODE -ne 0) -or (-not (Test-Path -LiteralPath (Join-Path $InstallDir "dist\index.js")))) {
+    Fail "build failed — please report this at https://github.com/Mcamento8/omnimod-mcp/issues"
+  }
   Ok "build clean"
 
   if (-not $SkipTests) {
