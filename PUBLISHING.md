@@ -13,6 +13,9 @@ can install and use.
 > `Mcamento8` and the MCP pre-links them by default (v1.2.0+), so a fresh
 > install works with zero repo configuration:
 > `omnimod-forge-compat`, `omnimod-command-blocks`, `omnimod-mcp`.
+> Since v1.3.0 there is a one-command Windows installer
+> (`scripts/install-windows.ps1`) plus a global `omnimod-mcp` command
+> (`setup` connect guide / `doctor` diagnostics / TTY-aware entry point).
 
 **Pre-flight (already done, verify again any time):**
 

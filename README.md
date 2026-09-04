@@ -1,6 +1,6 @@
 # OmniMod MCP — Professional Map & Mod Authoring for Any AI Agent
 
-![Version](https://img.shields.io/badge/version-1.2.0-blue)
+![Version](https://img.shields.io/badge/version-1.3.0-blue)
 ![Tools](https://img.shields.io/badge/tools-51-green)
 ![Resources](https://img.shields.io/badge/resources-13-purple)
 ![Node](https://img.shields.io/badge/node-%3E%3D18-orange)
@@ -59,10 +59,29 @@ This server is the layer that closes that gap. It also gives the agent:
 - A mod scaffolder that writes a complete Forge-shaped folder tree from a
   JSON spec, using the exact keys the loader reads.
 
-## Install in 2 minutes (free, local-first)
+## Install with ONE command (Windows, free)
+
+Open PowerShell and paste this single command — it downloads the MCP to the
+correct path (`%LOCALAPPDATA%\OmniModMCP\omnimod-mcp`), builds it, verifies
+it, and registers a global `omnimod-mcp` command that works from **any
+folder in any terminal**:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/Mcamento8/omnimod-mcp/main/scripts/install-windows.ps1 | iex"
+```
+
+Then, from any terminal, anywhere:
+
+```powershell
+omnimod-mcp          # prints YOUR personal connect guide (Kilo / Cline / Cursor / Claude)
+omnimod-mcp doctor   # checks node, files, game bridge, token, repo links
+```
+
+> Re-run the same one-command any time to **update** to the latest version.
+
+Alternative installs (no account, no cost):
 
 **Windows:** double-click `install.bat`. **macOS/Linux:** run `./install.sh`.
-Both install dependencies, build, and verify — no Python, no account, no cost.
 
 Manual install:
 

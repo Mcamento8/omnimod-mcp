@@ -88,7 +88,7 @@ import { join } from "node:path";
 const server = new McpServer(
   {
     name: "omnimod-mcp",
-    version: "1.2.0",
+    version: "1.3.0",
   },
   { capabilities: { tools: {}, resources: {}, prompts: {} } },
 );

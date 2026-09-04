@@ -1,6 +1,6 @@
 {
   "name": "omnimod-mcp",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Official OmniMod MCP server — turns any AI agent into a professional map builder and Forge 1.20.1 mod author. 51 tools for map building, game control, dual-mode testing, and mod scaffolding. Free, local-first, works with Claude, Cursor, Cline, Kilo and any MCP client.",
   "type": "module",
   "private": false,
@@ -49,6 +49,8 @@
     "selfcheck": "node dist/index.js selfcheck",
     "e2e": "node scripts/e2e.mjs",
     "live-test": "node scripts/live-test.mjs",
+    "setup": "node dist/index.js setup",
+    "doctor": "node dist/index.js doctor",
     "prepare": "npm run build",
     "prepublishOnly": "npm run build"
   },

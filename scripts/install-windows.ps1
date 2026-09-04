@@ -1,0 +1,139 @@
+<#
+.SYNOPSIS
+  OmniMod MCP — one-command installer for Windows. | تثبيت الام سي بي بأمر واحد
+.DESCRIPTION
+  Downloads (or updates) the MCP into the correct per-user path, installs
+  dependencies, builds, verifies, and registers a GLOBAL `omnimod-mcp`
+  command that works from ANY folder in ANY terminal.
+
+  Run this single command in PowerShell (normal user, NO admin needed):
+
+    powershell -NoProfile -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/Mcamento8/omnimod-mcp/main/scripts/install-windows.ps1 | iex"
+
+  Re-running it later safely UPDATES the installation (git pull + rebuild).
+
+.PARAMETER InstallDir
+  Override the install path. Default: %LOCALAPPDATA%\OmniModMCP\omnimod-mcp
+  (also honored via the OMNIMOD_MCP_DIR environment variable, mainly for tests).
+.PARAMETER SkipTests
+  Skip the selfcheck battery (faster; NOT recommended).
+#>
+param(
+  [string]$InstallDir = "",
+  [switch]$SkipTests
+)
+
+$ErrorActionPreference = "Stop"
+$RepoUrl = "https://github.com/Mcamento8/omnimod-mcp.git"
+$Branch = "main"
+
+if (-not $InstallDir) { $InstallDir = $env:OMNIMOD_MCP_DIR }
+if (-not $InstallDir) { $InstallDir = Join-Path $env:LOCALAPPDATA "OmniModMCP\omnimod-mcp" }
+
+function Step($n, $msg) { Write-Host ""; Write-Host "[$n] $msg" -ForegroundColor Cyan }
+function Ok($msg) { Write-Host "  OK: $msg" -ForegroundColor Green }
+function Fail($msg) { Write-Host "  ERROR: $msg" -ForegroundColor Red; exit 1 }
+
+Write-Host "================================================================"
+Write-Host "  OmniMod MCP installer — تثبيت الام سي بي"
+Write-Host "  Target: $InstallDir"
+Write-Host "================================================================"
+
+# --- [1] Node.js 18+ -------------------------------------------------------
+Step 1 "Checking Node.js (18+) ..."
+$node = Get-Command node -ErrorAction SilentlyContinue
+if (-not $node) {
+  Write-Host "  Node.js not found — trying winget ..." -ForegroundColor Yellow
+  $winget = Get-Command winget -ErrorAction SilentlyContinue
+  if ($winget) {
+    winget install --id OpenJS.NodeJS.LTS --accept-source-agreements --accept-package-agreements --silent
+    $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User")
+    $node = Get-Command node -ErrorAction SilentlyContinue
+  }
+  if (-not $node) { Fail "Install Node.js 18+ from https://nodejs.org then re-run this command." }
+}
+$major = (& node -p "process.versions.node.split('.')[0]")
+if ([int]$major -lt 18) { Fail "Node.js $((& node --version)) is too old — install Node.js 18+ from https://nodejs.org" }
+Ok "node $((& node --version))"
+
+# --- [2] git ---------------------------------------------------------------
+Step 2 "Checking git ..."
+$git = Get-Command git -ErrorAction SilentlyContinue
+foreach ($p in @("C:\Program Files\Git\bin\git.exe", "C:\Program Files\Git\cmd\git.exe")) {
+  if ((-not $git) -and (Test-Path -LiteralPath $p)) { $git = @{ Source = $p } }
+}
+if (-not $git) {
+  $winget = Get-Command winget -ErrorAction SilentlyContinue
+  if ($winget) {
+    Write-Host "  git not found — trying winget ..." -ForegroundColor Yellow
+    winget install --id Git.Git --accept-source-agreements --accept-package-agreements --silent
+    foreach ($p in @("C:\Program Files\Git\bin", "C:\Program Files\Git\cmd")) {
+      if (Test-Path -LiteralPath $p) { $env:Path = "$p;" + $env:Path }
+    }
+    $git = Get-Command git -ErrorAction SilentlyContinue
+  }
+  if (-not $git) { Fail "Install git from https://git-scm.com then re-run this command." }
+}
+$gitExe = if ($git.Source) { $git.Source } else { "git" }
+Ok "git $((& $gitExe --version))"
+
+# --- [3] Download / update --------------------------------------------------
+Step 3 "Downloading OmniMod MCP ..."
+if ((Test-Path -LiteralPath (Join-Path $InstallDir ".git"))) {
+  Write-Host "  Existing install found — updating (git pull) ..."
+  & $gitExe -C $InstallDir fetch origin $Branch
+  & $gitExe -C $InstallDir reset --hard "origin/$Branch"
+} else {
+  if (Test-Path -LiteralPath $InstallDir) { Remove-Item -LiteralPath $InstallDir -Recurse -Force }
+  New-Item -ItemType Directory -Path (Split-Path $InstallDir) -Force | Out-Null
+  & $gitExe clone --branch $Branch --depth 1 $RepoUrl $InstallDir
+}
+Ok "sources ready at $InstallDir"
+
+# --- [4] Dependencies + build ------------------------------------------------
+Step 4 "Installing dependencies (npm install) ..."
+Push-Location $InstallDir
+try {
+  & npm install
+  if ($LASTEXITCODE -ne 0) { Fail "npm install failed — check your internet connection and re-run." }
+  Ok "dependencies installed"
+
+  Step 5 "Building (npm run build) ..."
+  & npm run build
+  if ($LASTEXITCODE -ne 0) { Fail "build failed — please report this at https://github.com/Mcamento8/omnimod-mcp/issues" }
+  Ok "build clean"
+
+  if (-not $SkipTests) {
+    Step 6 "Verifying (npm run selfcheck) ..."
+    & npm run selfcheck
+    if ($LASTEXITCODE -ne 0) { Fail "selfcheck failed — please report this at https://github.com/Mcamento8/omnimod-mcp/issues" }
+    Ok "selfcheck PASS"
+  }
+} finally {
+  Pop-Location
+}
+
+# --- [7] Global command ------------------------------------------------------
+Step 7 "Registering the global `omnimod-mcp` command (works from ANY folder) ..."
+Push-Location $InstallDir
+try {
+  & npm link --omit=dev 2>$null
+  if ($LASTEXITCODE -ne 0) { & npm link }
+  if ($LASTEXITCODE -ne 0) { Fail "npm link failed — run PowerShell as normal user (not admin) and retry." }
+} finally {
+  Pop-Location
+}
+$cmd = Get-Command omnimod-mcp -ErrorAction SilentlyContinue
+if (-not $cmd) {
+  Fail "Global command not found after install. Close and reopen the terminal, then run: omnimod-mcp setup"
+}
+Ok "global command: $($cmd.Source)"
+
+Write-Host ""
+Write-Host "================================================================"
+Write-Host "  SUCCESS — تم التثبيت بنجاح!"
+Write-Host "  From ANY terminal, in ANY folder, run:   omnimod-mcp"
+Write-Host "  It prints your personal connect guide (Kilo / Cline / Cursor / Claude)."
+Write-Host "================================================================"
+Write-Host ""
+& node (Join-Path $InstallDir "dist\index.js") setup
