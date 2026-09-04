@@ -66,9 +66,12 @@ correct path (`%LOCALAPPDATA%\OmniModMCP\omnimod-mcp`), builds it, verifies
 it, and registers a global `omnimod-mcp` command that works from **any
 folder in any terminal**:
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/Mcamento8/omnimod-mcp/main/scripts/install-windows.ps1 | iex"
+```cmd
+powershell -NoProfile -ExecutionPolicy Bypass -c "$f=$env:TEMP+'\omnimod-install.ps1'; irm https://raw.githubusercontent.com/Mcamento8/omnimod-mcp/main/scripts/install-windows.ps1 -OutFile $f; & $f"
 ```
+
+(paste as ONE line in cmd or PowerShell — downloads the installer to a temp
+file and runs it; re-run any time to update)
 
 Then, from any terminal, anywhere:
 

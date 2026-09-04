@@ -1,0 +1,45 @@
+{
+  "_docsVersion": "omnimod-agent-docs-4",
+  "_readme": [
+    "Copy this file into build/ as ops-NNNN.json and edit it.",
+    "Batches apply in FILENAME SORT ORDER, so zero-pad the number.",
+    "Underscore-prefixed keys here are comments; the parser ignores unknown root keys,",
+    "but remove them anyway before shipping a batch you care about.",
+    "y must be 0..255. Boxes are INCLUSIVE. meta is the 1.8 nibble 0..15.",
+    "Vanilla block ids must be 1.8 names: planks not oak_planks, wool+meta not red_wool.",
+    "Max 20000 ops per file. One invalid op discards the WHOLE file."
+  ],
+  "format": "omnimod-dev-1",
+  "batch": "rename-me",
+  "ops": [
+
+    { "_": "1. optional: bring the player near the build so chunks are loaded",
+      "op": "command", "command": "tp @p 0 70 0" },
+
+    { "_": "2. ground plane / foundation (inclusive box)",
+      "op": "fill_area", "block": "minecraft:stone", "meta": 0,
+      "from": [0, 64, 0], "to": [8, 64, 6] },
+
+    { "_": "3. walls: fill the shell solid, carve later",
+      "op": "fill_area", "block": "minecraft:cobblestone", "meta": 0,
+      "from": [0, 65, 0], "to": [8, 68, 0] },
+
+    { "_": "4. carve a 1x2 doorway with air",
+      "op": "fill_area", "block": "minecraft:air", "meta": 0,
+      "from": [4, 65, 0], "to": [4, 66, 0] },
+
+    { "_": "5. a single decorative block",
+      "op": "place_block", "block": "minecraft:torch", "meta": 0, "x": 3, "y": 66, "z": 1 },
+
+    { "_": "6. swap one material for another, only where it matches",
+      "op": "replace_area", "fromBlock": "minecraft:dirt",
+      "block": "minecraft:grass", "meta": 0, "from": [0, 64, 0], "to": [8, 64, 6] },
+
+    { "_": "7. move the world spawn",
+      "op": "set_spawn", "pos": [4, 65, 3] },
+
+    { "_": "8. leave a trace in chat so the user sees the batch land",
+      "op": "chat", "message": "batch applied: rename-me" }
+
+  ]
+}
