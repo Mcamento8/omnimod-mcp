@@ -39,8 +39,8 @@ The server speaks MCP over stdio. Configure it in your client (Claude Desktop / 
 | `OMNIMOD_TOKEN` | (none) | 32-hex pairing token. Get one with `omni_pair` |
 | `OMNIMOD_TIMEOUT_MS` | `20000` | Per-request HTTP timeout |
 | `OMNIMOD_AUTO_TRANSLATE_BLOCKS` | `true` | Translate 1.20→1.8 names on the way out |
-| `OMNIMOD_FORGE_COMPAT_REPO` | (none) | Public mirror of the engine's Forge 1.20.1 compat layer (surfaced by `omni_knowledge topic='repos'`) |
-| `OMNIMOD_COMMAND_BLOCKS_REPO` | (none) | Public mirror of the engine's command-block system (surfaced by `omni_knowledge topic='repos'`) |
+| `OMNIMOD_FORGE_COMPAT_REPO` | `https://github.com/Mcamento8/omnimod-forge-compat` (pre-linked) | Public mirror of the engine's Forge 1.20.1 compat layer (surfaced by `omni_knowledge topic='repos'`) |
+| `OMNIMOD_COMMAND_BLOCKS_REPO` | `https://github.com/Mcamento8/omnimod-command-blocks` (pre-linked) | Public mirror of the engine's command-block system (surfaced by `omni_knowledge topic='repos'`) |
 
 ## What the MCP gives you (51 tools, 13 resources, 5 prompts)
 
@@ -185,8 +185,8 @@ npm run e2e         # اختبار JSON-RPC حقيقي
 | `OMNIMOD_TOKEN` | (فارغ) | توكن اقتران 32-hex. تحصل عليه بـ `omni_pair` |
 | `OMNIMOD_TIMEOUT_MS` | `20000` | مهلة كل طلب HTTP |
 | `OMNIMOD_AUTO_TRANSLATE_BLOCKS` | `true` | ترجمة 1.20→1.8 تلقائياً قبل الإرسال |
-| `OMNIMOD_FORGE_COMPAT_REPO` | (فارغ) | المستودع العام لطبقة توافق Forge 1.20.1 (يظهر عبر `omni_knowledge topic='repos'`) |
-| `OMNIMOD_COMMAND_BLOCKS_REPO` | (فارغ) | المستودع العام لنظام الكوماند بلوك (يظهر عبر `omni_knowledge topic='repos'`) |
+| `OMNIMOD_FORGE_COMPAT_REPO` | مربوط افتراضياً: `https://github.com/Mcamento8/omnimod-forge-compat` | المستودع العام لطبقة توافق Forge 1.20.1 (يظهر عبر `omni_knowledge topic='repos'`) |
+| `OMNIMOD_COMMAND_BLOCKS_REPO` | مربوط افتراضياً: `https://github.com/Mcamento8/omnimod-command-blocks` | المستودع العام لنظام الكوماند بلوك (يظهر عبر `omni_knowledge topic='repos'`) |
 
 ## ما يعطيك إياه الـ MCP (51 أداة، 13 موردًا، 5 prompts)
 
