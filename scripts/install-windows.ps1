@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   OmniMod MCP — one-command installer for Windows. | تثبيت الام سي بي بأمر واحد
 .DESCRIPTION
@@ -122,6 +122,15 @@ try {
   if ($LASTEXITCODE -ne 0) { Fail "npm link failed — run PowerShell as normal user (not admin) and retry." }
 } finally {
   Pop-Location
+}
+# npm's own .cmd shim calls dist\index.js directly (no node.exe) and breaks
+# on machines without a .js file association — overwrite it with an explicit
+# node invocation (quoting matters: the path usually contains spaces).
+$npmBin = Join-Path $env:APPDATA "npm"
+$shim = Join-Path $npmBin "omnimod-mcp.cmd"
+$entry = Join-Path $InstallDir "dist\index.js"
+if (Test-Path -LiteralPath $npmBin) {
+  Set-Content -LiteralPath $shim -Value "@ECHO off`r`nnode `"$entry`" %*`r`n" -Encoding Ascii
 }
 $cmd = Get-Command omnimod-mcp -ErrorAction SilentlyContinue
 if (-not $cmd) {
