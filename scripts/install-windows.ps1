@@ -129,10 +129,17 @@ try {
 
 # --- [7] Global command ------------------------------------------------------
 Step 7 "Registering the global `omnimod-mcp` command (works from ANY folder) ..."
+$npmBin = Join-Path $env:APPDATA "npm"
+# A previous install leaves our explicit .cmd shim behind, and `npm link`
+# aborts with EEXIST instead of overwriting it — remove npm's old shims
+# first (link recreates all three right after).
+foreach ($s in @("omnimod-mcp", "omnimod-mcp.cmd", "omnimod-mcp.ps1")) {
+  $p = Join-Path $npmBin $s
+  if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p -Force }
+}
 Push-Location $InstallDir
 try {
-  & npm link --omit=dev 2>$null
-  if ($LASTEXITCODE -ne 0) { & npm link }
+  & npm link
   if ($LASTEXITCODE -ne 0) { Fail "npm link failed — run PowerShell as normal user (not admin) and retry." }
 } finally {
   Pop-Location
@@ -140,7 +147,6 @@ try {
 # npm's own .cmd shim calls dist\index.js directly (no node.exe) and breaks
 # on machines without a .js file association — overwrite it with an explicit
 # node invocation (quoting matters: the path usually contains spaces).
-$npmBin = Join-Path $env:APPDATA "npm"
 $shim = Join-Path $npmBin "omnimod-mcp.cmd"
 $entry = Join-Path $InstallDir "dist\index.js"
 if (Test-Path -LiteralPath $npmBin) {
