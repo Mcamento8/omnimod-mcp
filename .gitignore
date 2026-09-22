@@ -12,3 +12,6 @@ repos/
 
 # scratch argument file used by the local rpc_*.mjs helpers
 rpc_args.json
+
+# scratch commit-message file used by local release scripts
+_commitmsg.txt
