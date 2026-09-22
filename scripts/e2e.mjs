@@ -123,6 +123,8 @@ async function main() {
     // CC0 game-sound library: search -> inspect -> fetch -> install -> playsound.
     "omni_sfx_library", "omni_sfx_search", "omni_sfx_inspect", "omni_sfx_fetch",
     "omni_sfx_install",
+    // Hand-authoring: a correct starting shell + a validator for what you wrote.
+    "omni_3d_template", "omni_3d_validate",
   ]) {
     expect(names.has(required), `missing tool: ${required}`);
   }

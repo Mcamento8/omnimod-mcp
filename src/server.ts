@@ -74,6 +74,7 @@ import { inspectMod } from "./inspect.js";
 import * as MapDocs from "./mapdocs.js";
 import * as Assets3D from "./assets3d.js";
 import * as Sfx from "./sfx.js";
+import * as ModelCheck from "./modelcheck.js";
 import {
   PROJECT_IDENTITY,
   NON_NEGOTIABLE_RULES,
@@ -91,7 +92,7 @@ import { join } from "node:path";
 const server = new McpServer(
   {
     name: "omnimod-mcp",
-    version: "1.5.0",
+    version: "1.6.0",
   },
   { capabilities: { tools: {}, resources: {}, prompts: {} } },
 );
@@ -2374,6 +2375,98 @@ server.tool(
               "The sound is inside the mod folder. Install/stage the mod, then reload the world.",
               `Then: ${play}`,
             ].join(" "),
+    });
+  },
+);
+
+// =====================================================================
+// AUTHORING A 3D MODEL — validate what you wrote, start from a correct shell
+// =====================================================================
+//
+// The library covers models that already exist. These two cover the model the
+// agent writes itself, which is where the expensive mistakes live: a concave
+// face the engine's fan triangulation tears apart, a texture bound with no UVs,
+// a base 30 blocks below its own origin, 40 000 triangles on a 30 000 budget.
+// None of those are visible in a text editor and all of them are obvious in game.
+
+server.tool(
+  "omni_3d_validate",
+  "Check a 3D model YOU authored, before it ships. Parses the OBJ exactly the way the engine parses it (same fan triangulation, same index rules, same axis fix, same UV/normal fallbacks) and reports the engine-visible measurements plus the defects that would only show up in game: concave faces that fan-triangulation tears apart, degenerate and duplicate triangles, inconsistent winding, non-manifold edges, a texture bound with no UVs, partial UVs, unnormalised normals, a base that is not at y=0, and the triangle budget. Call this after every hand-authored model, and again after every fix.",
+  {
+    path: z.string().optional().describe("Path to a local .obj file (its .mtl and sibling textures are read automatically)"),
+    obj: z.string().optional().describe("Inline OBJ text, as an alternative to `path`"),
+    mtl: z.string().optional().describe("Inline MTL text to pair with `obj`"),
+    intent: z.string().optional().describe("What the model is for, e.g. 'a 3x3 wooden crate' — used for context in the report"),
+    expectedSizeBlocks: z.number().positive().optional().describe("Largest dimension you intended, in blocks — the check flags a mismatch (1 OBJ unit = 1 block)"),
+  },
+  async (a) => {
+    if (!a.path && !a.obj) {
+      return json({ ok: false, error: "missing_input", hint: "Pass either `path` (a .obj file) or `obj` (inline text)." });
+    }
+    const ctx = { intent: a.intent, expectedSizeBlocks: a.expectedSizeBlocks };
+    const report = a.path
+      ? await trap(async () => ModelCheck.validateModelFile(resolve(a.path as string), ctx))
+      : ModelCheck.buildReport("(inline)", a.obj as string, a.mtl ?? null, ctx);
+    return json({
+      ...report,
+      next: report.ok
+        ? "Structure is sound. Now confirm it LOOKS right: upload it (omni_3d_upload) and place it, or open the OBJ in a viewer."
+        : "Fix every `error` finding, then run omni_3d_validate again. Do not ship a model with an unresolved error.",
+    });
+  },
+);
+
+server.tool(
+  "omni_3d_template",
+  "A CORRECT starting shell for a hand-authored model: outward winding on every face, the base exactly on y=0 (the engine anchors by base centre), 1 unit = 1 block, and `o` groups where a part may need to move. Use this instead of writing an OBJ header by hand — the geometry is yours to shape, but the structure will not be the reason it looks broken in game. Every template is validated by omni_3d_validate before it is served.",
+  {
+    kind: z.string().describe("box | slab | ramp | pillar | plane | box_with_parts"),
+    width: z.number().positive().optional().describe("Footprint width in blocks (default 1)"),
+    height: z.number().positive().optional().describe("Height in blocks (default 1)"),
+    depth: z.number().positive().optional().describe("Footprint depth in blocks (default 1)"),
+    material: z.string().optional().describe("Material name written into the MTL (default 'main')"),
+    colour: z.array(z.number()).optional().describe("[r,g,b] 0..1 for the material's Kd (default a wood brown)"),
+    saveTo: z.string().optional().describe("Folder to write <kind>.obj / <kind>.mtl into"),
+  },
+  async (a) => {
+    const kind = (a.kind ?? "").toLowerCase() as ModelCheck.TemplateKind;
+    const kinds: ModelCheck.TemplateKind[] = ["box", "slab", "ramp", "pillar", "plane", "box_with_parts"];
+    if (!kinds.includes(kind)) {
+      return json({ ok: false, error: "bad_kind", hint: `kind must be one of: ${kinds.join(", ")}` });
+    }
+    const colour =
+      Array.isArray(a.colour) && a.colour.length === 3
+        ? ([a.colour[0], a.colour[1], a.colour[2]] as [number, number, number])
+        : undefined;
+    const t = ModelCheck.buildTemplate(kind, {
+      width: a.width, height: a.height, depth: a.depth, material: a.material, colour,
+    });
+    // Prove it before serving it — a template that fails its own validator is worse than none.
+    const check = ModelCheck.buildReport(`template:${kind}`, t.obj, t.mtl);
+    const blocking = check.findings.filter((x) => x.severity === "error");
+
+    let written: string[] = [];
+    if (a.saveTo && blocking.length === 0) {
+      const dir = resolve(a.saveTo.trim());
+      await mkdir(dir, { recursive: true });
+      await writeFile(join(dir, `${kind}.obj`), t.obj, "utf8");
+      await writeFile(join(dir, `${kind}.mtl`), t.mtl, "utf8");
+      written = [join(dir, `${kind}.obj`), join(dir, `${kind}.mtl`)];
+    }
+
+    return json({
+      ok: blocking.length === 0,
+      kind,
+      note: t.note,
+      selfCheck: { triangles: check.engine.triangles, groups: check.engine.groups, sizeBlocks: check.engine.sizeBlocks, verdict: check.verdict },
+      written,
+      obj: t.obj,
+      mtl: t.mtl,
+      next: [
+        "Shape it: move/add vertices, add faces, split parts with `o <name>`.",
+        "Then run omni_3d_validate on your result — the template being valid does not make YOUR edits valid.",
+        "To colour it, either edit the MTL's Kd, or add `vt` lines + `map_Kd <texture>` (a texture needs UVs).",
+      ].join(" "),
     });
   },
 );

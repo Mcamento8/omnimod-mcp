@@ -42,7 +42,7 @@ The server speaks MCP over stdio. Configure it in your client (Claude Desktop / 
 | `OMNIMOD_FORGE_COMPAT_REPO` | `https://github.com/Mcamento8/omnimod-forge-compat` (pre-linked) | Public mirror of the engine's Forge 1.20.1 compat layer (surfaced by `omni_knowledge topic='repos'`) |
 | `OMNIMOD_COMMAND_BLOCKS_REPO` | `https://github.com/Mcamento8/omnimod-command-blocks` (pre-linked) | Public mirror of the engine's command-block system (surfaced by `omni_knowledge topic='repos'`) |
 
-## What the MCP gives you (66 tools, 13 resources, 5 prompts)
+## What the MCP gives you (68 tools, 13 resources, 5 prompts)
 
 **Connection** (11): `omni_map_connect`, `omni_ping`, `omni_pair`, `omni_config`, `omni_state`, `omni_help`, `omni_logs`, `omni_errors`, `omni_notifications`, `omni_agentlog`, `omni_devpatch_verify`.
 
@@ -117,6 +117,33 @@ measured, licence-clean catalogue.
   (`{name, obj|objB64, mtl?, profile?}` — stage a model into the world store),
   `POST /omni/model3d/place|configure|animate|remove`, `GET /omni/model3d/profile`.
 - Mods ship models as `assets/<ns>/models3d/*.obj` + `<name>.obj.model3d.json`.
+
+## Authoring a 3D model yourself — when the library is not enough
+
+The library covers models that already exist. When you have to build one, the
+order matters:
+
+| The model you need | Do this |
+|---|---|
+| A simple or parametric shape (box, slab, ramp, pillar, sign, plain crate) | **Author it directly** — you can make it EXACT |
+| A large or organic thing (terrain, creature, vehicle, statue) | **Search the library first** |
+| The library has nothing that fits professionally | **Author it yourself**, to the standard in `agent/14_AUTHORING_3D_MODELS.md` |
+
+- `omni_3d_template { kind }` — a CORRECT starting shell: outward winding on every
+  face, base exactly on y=0 (placement anchors by base centre), 1 unit = 1 block,
+  and `o` groups where a part may need to move. Every template is validated before
+  it is served.
+- `omni_3d_validate { path | obj }` — parses your OBJ exactly the way the ENGINE
+  parses it (same fan triangulation, same index rules, same axis fix, same UV and
+  normal fallbacks) and reports the defects that only show up in game:
+
+  concave faces that fan-triangulation tears apart · degenerate and duplicate
+  triangles · inconsistent winding · non-manifold edges · a texture bound with no
+  UVs · partial UVs · unnormalised normals · a base that is not at y=0 · the
+  triangle budget · a size that does not match what you said you wanted.
+
+**Two rules that override everything:** never ship a model you have not validated,
+and never claim one works without seeing it in game.
 
 ## Sound — a mod or a map with no audio feels dead
 
@@ -225,7 +252,7 @@ mcp/
 ├── src/
 │   ├── index.ts          # entry point
 │   ├── selfcheck.ts      # in-process test battery
-│   ├── server.ts         # 66 tools + 13 resources + 5 prompts (incl. omni_mapdev_mode, omni_map_guide)
+│   ├── server.ts         # 68 tools + 13 resources + 5 prompts (incl. omni_mapdev_mode, omni_map_guide)
 │   ├── bridge.ts         # HTTP client with error mapping
 │   ├── config.ts         # env-driven runtime config
 │   ├── translate.ts      # 1.20→1.8 block/item name+meta translation

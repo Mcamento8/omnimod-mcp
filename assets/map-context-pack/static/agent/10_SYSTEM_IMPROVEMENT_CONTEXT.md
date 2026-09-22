@@ -283,4 +283,4 @@ If any of these is missing, the task is not done. The map-building agents who pi
 this work tomorrow will not know what you shipped, and you will have wasted their first
 hour on every new map they touch.
 
-<!-- omnimod-docs-version: omnimod-agent-docs-10 -->
+<!-- omnimod-docs-version: omnimod-agent-docs-11 -->

@@ -480,6 +480,22 @@ omni_command {command:"/omni3d interaction nearest interact [{\"type\":\"animati
 omni_command {command:"/omni3d animate nearest open toggle"}
 ```
 
+### 14.2a Authoring a model yourself
+
+```bash
+omni_3d_template {kind:"box", width:3, height:2, depth:3, material:"wood", saveTo:"./crate"}
+# ... shape it: move/add vertices, split moving parts with `o <name>` ...
+omni_3d_validate {path:"./crate/box.obj", intent:"a 3x2x3 crate", expectedSizeBlocks:3}
+omni_3d_upload   {dir:"./crate"}
+omni_3d_place    {model:"omni3d:box", x:0, y:64, z:0}
+```
+
+The validator parses the OBJ the way the ENGINE parses it and catches what is
+invisible in a text editor: concave faces that fan-triangulation tears apart,
+degenerate and duplicate triangles, inconsistent winding, a texture bound with no
+UVs, a base that is not at y=0, the triangle budget. Full standard, colour rules,
+shape rules and the defect table: `agent/14_AUTHORING_3D_MODELS.md`.
+
 ### 14.2b Sound — CC0 audio for a mod or a map
 
 ```bash

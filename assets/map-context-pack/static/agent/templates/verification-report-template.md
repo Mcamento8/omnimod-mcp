@@ -95,4 +95,4 @@ Raw log lines (paste, do not paraphrase):
 - **Known defects remaining:** <...>
 - **Follow-up needed:** <...>
 
-<!-- omnimod-docs-version: omnimod-agent-docs-10 -->
+<!-- omnimod-docs-version: omnimod-agent-docs-11 -->

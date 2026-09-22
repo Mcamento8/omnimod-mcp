@@ -24,6 +24,7 @@ import { inspectMod } from "./inspect.js";
 import * as MapDocs from "./mapdocs.js";
 import * as Assets3D from "./assets3d.js";
 import * as Sfx from "./sfx.js";
+import * as ModelCheck from "./modelcheck.js";
 import { rm, mkdir, stat, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -485,6 +486,99 @@ async function main(): Promise<void> {
   );
 
   // ------------------------------------------------------------------
+  // Hand-authored model validation (pure parts — no network required)
+  // ------------------------------------------------------------------
+  // The library covers models that already exist. This covers the model the
+  // agent writes itself, where the expensive mistakes live: a concave face the
+  // engine's fan triangulation tears apart, a texture bound with no UVs, a base
+  // far below its own origin.
+
+  // A correct, hand-authored 1x1x1 box: base on y=0, outward winding.
+  const goodBox =
+    "mtllib crate.mtl\no crate\nusemtl wood\n" +
+    "v 0 0 0\nv 1 0 0\nv 1 0 1\nv 0 0 1\nv 0 1 0\nv 1 1 0\nv 1 1 1\nv 0 1 1\n" +
+    "f 1 4 3 2\nf 5 6 7 8\nf 1 2 6 5\nf 3 4 8 7\nf 2 3 7 6\nf 4 1 5 8\n";
+  const woodMtl = "newmtl wood\nKd 0.55 0.36 0.20\n";
+
+  const rGood = ModelCheck.buildReport("crate", goodBox, woodMtl);
+  assert(rGood.engine.triangles === 12, `good box should be 12 triangles, got ${rGood.engine.triangles}`);
+  assert(rGood.engine.groups === 1, "good box should be one group");
+  assert(rGood.engine.sizeBlocks.x === 1 && rGood.engine.sizeBlocks.y === 1, "good box should be 1x1x1");
+  assert(rGood.engine.baseOffsetY === 0, "good box base must sit on y=0");
+  assert(rGood.counts.errors === 0 && rGood.counts.warnings === 0, `good box must be clean: ${JSON.stringify(rGood.findings)}`);
+  assert(rGood.ok, "a clean model must report ok");
+
+  const ids = (obj: string, mtl: string | null = null, ctx = {}) =>
+    ModelCheck.buildReport("t", obj, mtl, ctx).findings.map((f) => f.id);
+
+  assert(ids("v 0 0 0\nv 1 0 0\nv 2 0 0\nv 0 1 0\nf 1 2 3\nf 1 2 4\n").includes("degenerate_triangles"),
+    "a collinear triangle must be reported as degenerate");
+  assert(ids("v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nf 1 2 3\nf 1 2 3\n").includes("duplicate_triangles"),
+    "a repeated face must be reported as a duplicate");
+  assert(ids("usemtl nope\nv 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n").includes("material_undefined"),
+    "usemtl without an MTL definition must be reported");
+  assert(
+    ids("v 0 0 0\nv 3 0 0\nv 3 1 0\nv 1 1 0\nv 1 3 0\nv 0 3 0\nf 1 2 3 4 5 6\n").includes("concave_faces"),
+    "a concave polygon must be reported — fan triangulation tears it apart",
+  );
+  assert(
+    ids("mtllib t.mtl\nv 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n", "newmtl m\nKd 1 1 1\nmap_Kd w.png\n")
+      .includes("texture_without_uv"),
+    "a bound texture with no vt lines must be an error",
+  );
+  assert(ids("v 0 -2 0\nv 1 -2 0\nv 1 -1 0\nv 0 -1 0\nf 1 2 3 4\n").includes("base_not_at_origin"),
+    "a base below y=0 must be reported — placement anchors by base centre");
+  assert(
+    ids("v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nvt 0 0\nvt 1 0\nvt 1 1\nf 1/1 2/2 3/3\nf 1 3 4\n",
+        "newmtl m\nKd 1 1 1\nmap_Kd x.png\n").includes("partial_uvs"),
+    "a file where only some faces carry vt must be reported",
+  );
+  assert(ids("v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 5\nf 1//1 2//1 3//1\n").includes("unnormalised_normals"),
+    "a non-unit normal must be reported");
+  assert(ids("# empty\n").includes("no_geometry"), "a file with no faces must be reported as empty");
+  assert(
+    ModelCheck.buildReport("t", "v 0 0 0\nv 40 0 0\nv 40 40 0\nv 0 40 0\nf 1 2 3 4\n", null, {
+      expectedSizeBlocks: 1,
+    }).findings.some((f) => f.id === "scale_mismatch"),
+    "a model far larger than the stated intent must be reported",
+  );
+  assert(
+    ModelCheck.buildReport(
+      "t",
+      "v 0 0 0\nv 1 0 0\nv 0 1 0\n" + Array.from({ length: 30001 }, () => "f 1 2 3").join("\n"),
+      null,
+    ).findings.some((f) => f.id === "over_budget" && f.severity === "error"),
+    "a model over the triangle budget must be a blocking error",
+  );
+
+  // Named parts must be surfaced, because that is what makes per-part animation
+  // possible at all.
+  const parts = ModelCheck.buildReport("t", "v 0 0 0\nv 1 0 0\nv 0 1 0\nv 1 1 0\no body\nf 1 2 3\no lid\nf 2 4 3\n", null);
+  assert(parts.engine.groupNames.join(",") === "body,lid", `named parts wrong: ${parts.engine.groupNames}`);
+
+  // Every shipped template must pass its own validator — a template that fails
+  // is worse than no template, because it looks authoritative.
+  const kinds: ModelCheck.TemplateKind[] = ["box", "slab", "ramp", "pillar", "plane", "box_with_parts"];
+  for (const k of kinds) {
+    const t = ModelCheck.buildTemplate(k, { width: 2, height: 1.5, depth: 3 });
+    const r = ModelCheck.buildReport(`template:${k}`, t.obj, t.mtl);
+    const bad = r.findings.filter((x) => x.severity !== "note");
+    assert(bad.length === 0, `template "${k}" fails its own validator: ${bad.map((x) => x.id).join(", ")}`);
+    assert(r.engine.baseOffsetY === 0, `template "${k}" does not sit on y=0`);
+    assert(r.engine.triangles > 0, `template "${k}" has no geometry`);
+  }
+  // A two-part template must NOT leave two coincident faces (the classic
+  // z-fighting bug): body and lid share an interface.
+  const twoPart = ModelCheck.buildTemplate("box_with_parts", { width: 2, height: 2, depth: 2 });
+  assert(
+    !ModelCheck.buildReport("t", twoPart.obj, twoPart.mtl).findings.some((x) => x.id === "duplicate_triangles"),
+    "the two-part template must not contain coincident faces",
+  );
+  process.stderr.write(
+    "  modelcheck: parser + 11 defect families + 6 self-validated templates pass\n",
+  );
+
+  // ------------------------------------------------------------------
   // Per-map agent context pack (mapdocs.ts + the exported engine pack)
   // ------------------------------------------------------------------
   const pack = await MapDocs.loadPackSource();
@@ -582,6 +676,27 @@ async function main(): Promise<void> {
       (f) => f.rel.includes("13_SOUND_AND_AUDIO") && f.text.includes("playsound"),
     ),
     "the sound doc must show how to actually play the event",
+  );
+  // [AUTHORING 2026-09-22] a map agent that needs a model the library does not
+  // have must be able to AUTHOR one correctly. The pack must carry the decision
+  // order, the structural rules the engine enforces, and the validation loop —
+  // otherwise it will hand-write an OBJ and ship something invisible or torn.
+  assert(
+    pack.static.some(
+      (f) =>
+        f.rel.includes("14_AUTHORING_3D_MODELS") &&
+        f.text.includes("THE DECISION ORDER") &&
+        f.text.includes("omni_3d_template") &&
+        f.text.includes("omni_3d_validate") &&
+        f.text.includes("concave"),
+    ),
+    "the 3D authoring contract is missing from the pack — re-export MapDevWorkspaceDocs",
+  );
+  assert(
+    pack.static.some(
+      (f) => f.rel.includes("14_AUTHORING_3D_MODELS") && f.text.includes("base sits exactly on y = 0"),
+    ),
+    "the authoring doc must state the base-origin rule",
   );
   process.stderr.write(
     `  pack: ${pack.version}, ${pack.static.length} static + ${pack.living.length} living\n`,

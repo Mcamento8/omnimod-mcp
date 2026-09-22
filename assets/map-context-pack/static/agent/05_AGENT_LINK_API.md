@@ -213,4 +213,4 @@ code. Use `/omni/devpatch/verify` to compare your local file hashes against what
 running device was built from — `mismatches` means the device is NOT running your edit and
 any test result you collect is about the old code.
 
-<!-- omnimod-docs-version: omnimod-agent-docs-10 -->
+<!-- omnimod-docs-version: omnimod-agent-docs-11 -->

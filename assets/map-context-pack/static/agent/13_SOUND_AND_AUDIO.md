@@ -153,4 +153,4 @@ Design rules that keep it professional:
    their licence (CC0 — attribution is not required, but record it anyway).
 
 
-<!-- omnimod-docs-version: omnimod-agent-docs-10 -->
+<!-- omnimod-docs-version: omnimod-agent-docs-11 -->

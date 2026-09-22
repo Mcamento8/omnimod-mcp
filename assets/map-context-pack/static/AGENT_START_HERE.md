@@ -94,4 +94,4 @@ whose hash is not in the ledger, writes the result into the ledger, and posts a 
 `[MapDev]` chat line. That is the entire loop. Everything else in this pack exists to make
 sure the ops inside that JSON are correct, precise, and provably applied.
 
-<!-- omnimod-docs-version: omnimod-agent-docs-10 -->
+<!-- omnimod-docs-version: omnimod-agent-docs-11 -->

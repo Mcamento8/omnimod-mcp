@@ -44,13 +44,20 @@ Decision table:
 | names a real object (car, plane, statue, mountain) | usually models — confirm if the map is all blocks |
 | small decoration on an all-block map (table, lamp) | blocks first; models only for shapes blocks cannot make |
 
-## 2. Where models come from (four sources)
+Once you have decided a model IS the right tool, pick the SOURCE with the same care — a
+simple shape you can make exact yourself, a complex one you should take from the library,
+and anything the library only approximates you must author to the standard in
+`agent/14_AUTHORING_3D_MODELS.md`. Never ship a model you have not run through
+`omni_3d_validate`.
+
+## 2. Where models come from (five sources)
 
 | Source | How | Model id |
 |---|---|---|
 | **The CC0 model library** (start here) | `omni_3d_search` -> `omni_3d_inspect` -> `omni_3d_fetch` -> `omni_3d_upload` | `omni3d:<name>` |
 | Uploaded by you | POST /omni/model3d/upload `{world?, name, obj\|objB64, mtl?\|mtlB64?, profile?}` | `omni3d:<name>` |
 | From a staged 1.20.1 mod | the mod ships `assets/<ns>/models3d/*.obj` + `*.obj.model3d.json` | `<ns>:<name>` |
+| **Authored by you** | `omni_3d_template` -> shape -> `omni_3d_validate` -> upload. Contract: `agent/14_AUTHORING_3D_MODELS.md` | `omni3d:<name>` |
 | Already in this map | models3d store of the world (persists with the save) | as uploaded |
 
 Check what already exists before uploading: `GET /omni/model3d/list` or `/omni3d models`.
@@ -282,4 +289,4 @@ sustained walk across the model shows no stutter entries in the log ring.
 | library search returns nothing | too many filters at once (tags are AND) | drop a tag, or widen `maxTri`/`maxSize` |
 
 
-<!-- omnimod-docs-version: omnimod-agent-docs-10 -->
+<!-- omnimod-docs-version: omnimod-agent-docs-11 -->

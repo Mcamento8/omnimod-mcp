@@ -171,4 +171,4 @@ With the MCP: `omni_mod_scaffold` writes the folder, `omni_mod_inspect` lints a 
 folder with file:line citations, `omni_recipe_validate` lints a single recipe JSON, and
 `omni_mod_add` stages the JAR into a world.
 
-<!-- omnimod-docs-version: omnimod-agent-docs-10 -->
+<!-- omnimod-docs-version: omnimod-agent-docs-11 -->

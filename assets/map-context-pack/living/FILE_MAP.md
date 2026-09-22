@@ -78,4 +78,4 @@ All paths are relative to the map folder `worlds/__OMNIMOD_MAP__/`.
 
 <Remove rows that do not exist for this map, and add anything else you create.>
 
-<!-- omnimod-docs-version: omnimod-agent-docs-10 -->
+<!-- omnimod-docs-version: omnimod-agent-docs-11 -->
