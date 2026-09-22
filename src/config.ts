@@ -56,6 +56,16 @@ export interface OmniConfig {
   assetLibraryLocalPath: string | null;
   /** Where fetched models and the cached catalogue are written. */
   assetCacheDir: string;
+  /**
+   * Public CC0 game-SFX library (index.json + OGG/WAV/FLAC) that the omni_sfx_*
+   * tools search, inspect, fetch and install. Defaults to the published index;
+   * set it to null to disable the sound tools entirely.
+   */
+  sfxRepoUrl: string | null;
+  /** Optional local checkout of the SFX library (works offline, faster). */
+  sfxLocalPath: string | null;
+  /** Where fetched sounds and the cached SFX catalogue are written. */
+  sfxCacheDir: string;
 }
 
 function envInt(name: string, fallback: number): number {
@@ -93,6 +103,12 @@ export const DEFAULT_COMMAND_BLOCKS_REPO =
  */
 export const DEFAULT_ASSET_LIBRARY_REPO =
   "https://github.com/Mcamento8/omnimod-3d-library";
+/**
+ * Default public CC0 game-sound library (Kenney + OpenGameArt, verified CC0).
+ * Updated continuously upstream, so the tools read its catalogue live.
+ */
+export const DEFAULT_SFX_REPO =
+  "https://github.com/Mcamento8/open-game-sfx-index";
 
 function envUrlOrDefault(name: string, fallback: string): string | null {
   const raw = process.env[name];
@@ -133,6 +149,10 @@ export const config: OmniConfig = {
   assetLibraryLocalPath: envPath("OMNIMOD_ASSET_LIBRARY_PATH"),
   assetCacheDir: envPath("OMNIMOD_ASSET_CACHE_DIR") ||
     resolve(envPath("OMNIMOD_WORK_DIR") || resolve(homedir(), ".omnimod-mcp"), "assets"),
+  sfxRepoUrl: envUrlOrDefault("OMNIMOD_SFX_REPO", DEFAULT_SFX_REPO),
+  sfxLocalPath: envPath("OMNIMOD_SFX_LOCAL_PATH"),
+  sfxCacheDir: envPath("OMNIMOD_SFX_CACHE_DIR") ||
+    resolve(envPath("OMNIMOD_WORK_DIR") || resolve(homedir(), ".omnimod-mcp"), "sfx"),
 };
 
 export function baseUrl(): string {
@@ -153,5 +173,8 @@ export function describeConfig(): string {
     `assetLibraryRepoUrl: ${config.assetLibraryRepoUrl ?? "(unlinked — omni_3d_* tools disabled)"}`,
     `assetLibraryLocalPath: ${config.assetLibraryLocalPath ?? "(not set — the library is read over HTTPS)"}`,
     `assetCacheDir: ${config.assetCacheDir}`,
+    `sfxRepoUrl: ${config.sfxRepoUrl ?? "(unlinked — omni_sfx_* tools disabled)"}`,
+    `sfxLocalPath: ${config.sfxLocalPath ?? "(not set — the sound library is read over HTTPS)"}`,
+    `sfxCacheDir: ${config.sfxCacheDir}`,
   ].join("\n");
 }

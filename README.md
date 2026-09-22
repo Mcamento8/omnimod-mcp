@@ -93,7 +93,7 @@ cd mcp
 npm install
 npm run build
 npm run selfcheck   # runs the in-process test battery (registry, ops, shapes, scaffold, inspect, mapdocs)
-npm run e2e        # end-to-end JSON-RPC test (61 tools, 13 resources, 5 prompts)
+npm run e2e        # end-to-end JSON-RPC test (66 tools, 13 resources, 5 prompts)
 ```
 
 The server speaks MCP over stdio. Point your client at `node dist/index.js`.
@@ -199,7 +199,7 @@ Kilo Code is the original OmniMod project harness. Add the same shape to
 
 ## First agent call
 
-Once the server is connected, the agent has 61 tools (plus the full map-dev master guide: `omni_map_guide` / resource `omnimod://knowledge/map-dev-guide`). A typical first
+Once the server is connected, the agent has 66 tools (plus the full map-dev master guide: `omni_map_guide` / resource `omnimod://knowledge/map-dev-guide`). A typical first
 session:
 
 ```

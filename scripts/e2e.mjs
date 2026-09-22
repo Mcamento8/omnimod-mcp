@@ -120,11 +120,16 @@ async function main() {
     // agent that cannot see them will hand-author meshes the library already has.
     "omni_3d_library", "omni_3d_search", "omni_3d_inspect", "omni_3d_fetch",
     "omni_3d_models", "omni_3d_upload", "omni_3d_place", "omni_3d_animate",
+    // CC0 game-sound library: search -> inspect -> fetch -> install -> playsound.
+    "omni_sfx_library", "omni_sfx_search", "omni_sfx_inspect", "omni_sfx_fetch",
+    "omni_sfx_install",
   ]) {
     expect(names.has(required), `missing tool: ${required}`);
   }
   // The library tools must describe themselves well enough to be used blind.
-  for (const t of toolsList.filter((x) => x.name.startsWith("omni_3d_"))) {
+  for (const t of toolsList.filter(
+    (x) => x.name.startsWith("omni_3d_") || x.name.startsWith("omni_sfx_"),
+  )) {
     expect((t.description ?? "").length > 80, `${t.name} has a thin description`);
     expect(t.inputSchema !== undefined, `${t.name} has no input schema`);
   }

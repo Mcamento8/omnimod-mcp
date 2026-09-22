@@ -145,4 +145,4 @@ When you are unsure about a name or a meta value, do not guess across a whole bu
 
 One probe op costs two seconds. A wrong meta across a 4000-block build costs a rebuild.
 
-<!-- omnimod-docs-version: omnimod-agent-docs-9 -->
+<!-- omnimod-docs-version: omnimod-agent-docs-10 -->

@@ -116,4 +116,4 @@ after stage 6 means redoing the roof, the windows and the interior.
 - [ ] Interior is enclosed and lit.
 - [ ] Nothing pre-existing in the map was destroyed that the user did not agree to lose.
 
-<!-- omnimod-docs-version: omnimod-agent-docs-9 -->
+<!-- omnimod-docs-version: omnimod-agent-docs-10 -->

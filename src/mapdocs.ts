@@ -71,6 +71,7 @@ export const REFERENCE_DOCS: readonly string[] = [
   `${LAYOUT.AGENT_SUBDIR}/08_TROUBLESHOOTING.md`,
   `${LAYOUT.AGENT_SUBDIR}/09_HANDOFF_PROTOCOL.md`,
   `${LAYOUT.AGENT_SUBDIR}/12_OMNI_3D_MODELS.md`,
+  `${LAYOUT.AGENT_SUBDIR}/13_SOUND_AND_AUDIO.md`,
 ];
 
 /** Files the agent owns; the engine seeds them once and never overwrites them. */

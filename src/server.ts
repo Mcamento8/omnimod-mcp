@@ -61,6 +61,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { writeFile, mkdir, readFile, readdir, stat as fsStat } from "node:fs/promises";
 import { dirname, isAbsolute, resolve } from "node:path";
+import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import { config, baseUrl, describeConfig, DEFAULT_FORGE_COMPAT_REPO, DEFAULT_COMMAND_BLOCKS_REPO } from "./config.js";
@@ -72,6 +73,7 @@ import { scaffoldMod, type ModSpec } from "./scaffold.js";
 import { inspectMod } from "./inspect.js";
 import * as MapDocs from "./mapdocs.js";
 import * as Assets3D from "./assets3d.js";
+import * as Sfx from "./sfx.js";
 import {
   PROJECT_IDENTITY,
   NON_NEGOTIABLE_RULES,
@@ -89,7 +91,7 @@ import { join } from "node:path";
 const server = new McpServer(
   {
     name: "omnimod-mcp",
-    version: "1.4.0",
+    version: "1.5.0",
   },
   { capabilities: { tools: {}, resources: {}, prompts: {} } },
 );
@@ -132,6 +134,39 @@ async function fileExists(p: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * Is an audio encoder on PATH? Only used when a chosen sound has no OGG
+ * upstream — the engine can only play `<name>.ogg`, so without one the honest
+ * answer is "this cannot be installed", not "installed" followed by silence.
+ */
+function findEncoder(): Promise<string | null> {
+  const candidates = [...Sfx.ENCODER_CANDIDATES];
+  return new Promise((res) => {
+    const next = () => {
+      const exe = candidates.shift();
+      if (!exe) return res(null);
+      execFile(exe, ["-version"], { timeout: 5000, windowsHide: true }, (err) => {
+        if (err) return next();
+        res(exe);
+      });
+    };
+    next();
+  });
+}
+
+/** Run an encoder to produce a mono/stereo OGG the engine can play. */
+function runEncoder(exe: string, input: string, output: string): Promise<number> {
+  const args =
+    exe === "ffmpeg"
+      ? ["-y", "-hide_banner", "-loglevel", "error", "-i", input, "-c:a", "libvorbis", "-q:a", "5", output]
+      : ["-Q", "-o", output, input];
+  return new Promise((res) => {
+    execFile(exe, args, { timeout: 120000, windowsHide: true }, (err) => {
+      res(err ? (typeof err.code === "number" ? err.code : 1) : 0);
+    });
+  });
 }
 
 // =====================================================================
@@ -856,8 +891,8 @@ server.tool(
       case "endpoints":        return json(ENDPOINT_CATALOG);
       case "troubleshooting":  return json(MOD_TROUBLESHOOTING);
       case "mapdev":           return json({ workflow: MAP_DEV_GUIDE, fullGuide: "omni_map_guide tool or omnimod://knowledge/map-dev-guide resource", modeTool: "omni_mapdev_mode", note: "The 8-phase professional map workflow. The full guide text is one call away." });
-      case "repos":            return json({ repos: sourceRepos(config.forgeCompatRepoUrl, config.commandBlocksRepoUrl, config.assetLibraryRepoUrl), note: "Public mirrors of the engine systems and the CC0 3D model library (pre-linked by default; override with OMNIMOD_FORGE_COMPAT_REPO / OMNIMOD_COMMAND_BLOCKS_REPO / OMNIMOD_ASSET_LIBRARY_REPO env vars or omni_config)." });
-      case "all":              return json({ identity: PROJECT_IDENTITY, rules: NON_NEGOTIABLE_RULES, pitfalls: COMMON_PITFALLS, commands: COMMAND_GUIDE, recipes: RECIPE_GUIDE, staging: STAGING_PATH_TEMPLATE, endpoints: ENDPOINT_CATALOG, troubleshooting: MOD_TROUBLESHOOTING, mapdev: MAP_DEV_GUIDE, repos: sourceRepos(config.forgeCompatRepoUrl, config.commandBlocksRepoUrl, config.assetLibraryRepoUrl) });
+      case "repos":            return json({ repos: sourceRepos(config.forgeCompatRepoUrl, config.commandBlocksRepoUrl, config.assetLibraryRepoUrl, config.sfxRepoUrl), note: "Public mirrors of the engine systems and the CC0 3D model library (pre-linked by default; override with OMNIMOD_FORGE_COMPAT_REPO / OMNIMOD_COMMAND_BLOCKS_REPO / OMNIMOD_ASSET_LIBRARY_REPO env vars or omni_config)." });
+      case "all":              return json({ identity: PROJECT_IDENTITY, rules: NON_NEGOTIABLE_RULES, pitfalls: COMMON_PITFALLS, commands: COMMAND_GUIDE, recipes: RECIPE_GUIDE, staging: STAGING_PATH_TEMPLATE, endpoints: ENDPOINT_CATALOG, troubleshooting: MOD_TROUBLESHOOTING, mapdev: MAP_DEV_GUIDE, repos: sourceRepos(config.forgeCompatRepoUrl, config.commandBlocksRepoUrl, config.assetLibraryRepoUrl, config.sfxRepoUrl) });
     }
   },
 );
@@ -1372,7 +1407,7 @@ server.resource(
   "Engine source repositories (Forge compat layer + command-block system)",
   "omnimod://knowledge/repos",
   async () => ({
-    contents: [{ uri: "omnimod://knowledge/repos", mimeType: "application/json", text: JSON.stringify({ repos: sourceRepos(config.forgeCompatRepoUrl, config.commandBlocksRepoUrl, config.assetLibraryRepoUrl), note: "Public mirrors of the engine systems and the CC0 3D model library (pre-linked by default; override via the OMNIMOD_*_REPO env vars or omni_config)." }, null, 2) }],
+    contents: [{ uri: "omnimod://knowledge/repos", mimeType: "application/json", text: JSON.stringify({ repos: sourceRepos(config.forgeCompatRepoUrl, config.commandBlocksRepoUrl, config.assetLibraryRepoUrl, config.sfxRepoUrl), note: "Public mirrors of the engine systems and the CC0 3D model library (pre-linked by default; override via the OMNIMOD_*_REPO env vars or omni_config)." }, null, 2) }],
   }),
 );
 
@@ -1982,6 +2017,364 @@ server.tool(
       bridge.post("/omni/model3d/animate", { target, clip, mode: mode ?? "once" }, 60000),
     );
     return json(res);
+  },
+);
+
+// =====================================================================
+// SOUND LIBRARY (CC0) — search, inspect, fetch, install, playsound
+// =====================================================================
+//
+// A mod or a map with no sound feels dead, and audio is the one asset an agent
+// cannot author. So the useful thing is a curated CC0 catalogue plus a way to
+// prove what was downloaded and to put it where the engine can actually reach
+// it. That last part is where most of the care went: the engine resolves every
+// sounds.json entry to `<name>.ogg`, so an install that dropped a WAV into a
+// pack would look successful and play nothing.
+
+const SFX_HINT =
+  "If the sound library is unlinked or unreachable, set OMNIMOD_SFX_REPO, " +
+  "or point OMNIMOD_SFX_LOCAL_PATH at a local clone to work offline.";
+
+server.tool(
+  "omni_sfx_library",
+  "The CC0 game-sound library: what it contains, which formats the engine can actually play, and how to use it. Call this before adding ANY sound to a mod or a map (button click, door, pickup, footstep, explosion, music jingle, voiceover). Every sound is CC0 — commercial use allowed, no attribution required. Counts are read live because the upstream index is updated continuously.",
+  { refresh: z.boolean().optional().describe("Re-download the catalogue instead of using the cached copy") },
+  async ({ refresh }) => {
+    const cat = await trap(async () => Sfx.loadCatalog({ refresh }));
+    return json({
+      ...Sfx.librarySummary(cat),
+      engineContract: Sfx.ENGINE_NOTES,
+      howTo: [
+        "1. omni_sfx_search { query, category?, tag?, useCase?, mood?, maxDuration? } — find candidates.",
+        "2. omni_sfx_inspect { id, need? } — duration, formats, integrity hash, and whether it fits your trigger.",
+        "3. omni_sfx_fetch { id } — download ONLY that file and verify its SHA-256.",
+        "4. omni_sfx_install { id, target:'mod', dir } or { id, target:'map', map } — writes the OGG and merges sounds.json.",
+        "5. Play it: playsound <ns>:<event> @a — omni_sfx_install prints the exact command.",
+        "",
+        "IMPORTANT: only OGG is playable. The engine builds every sound path as",
+        "<name>.ogg, so a WAV/MP3/FLAC dropped into a pack is copied but never requested.",
+        "omni_sfx_install refuses such a sound and says so rather than installing something silent.",
+      ],
+      hint: SFX_HINT,
+    });
+  },
+);
+
+server.tool(
+  "omni_sfx_search",
+  "Search the CC0 game-sound library. Returns COMPACT rows (id, title, category, duration, formats, tags, Arabic keywords) so you can choose without downloading audio. Arabic queries work — the catalogue carries Arabic keywords alongside English ones.",
+  {
+    query: z.string().optional().describe("Free text, e.g. 'button click', 'sword hit', 'door creak', 'coin pickup' — Arabic works too"),
+    category: z.string().optional().describe("ui | interface | impact | sci-fi | digital | rpg | casino | music-jingle | voiceover | retro | horror (read omni_sfx_library for the live list)"),
+    pack: z.string().optional().describe("Exact pack name, e.g. 'ui-audio', 'oga-512-retro'"),
+    tag: z.array(z.string()).optional().describe("All of these tags must match (AND)"),
+    useCase: z.string().optional().describe("Substring of the catalogue's use-case hints, e.g. 'menu', 'board game'"),
+    mood: z.string().optional().describe("Substring of the mood hints, e.g. 'playful', 'tense', 'dark'"),
+    maxDuration: z.number().positive().optional().describe("Longest acceptable length in seconds — use 1 for one-shot UI, 10+ for ambience"),
+    minDuration: z.number().positive().optional().describe("Shortest acceptable length in seconds"),
+    format: z.string().optional().describe("Only sounds available in this format. 'ogg' is the only one the engine can play"),
+    listCategories: z.boolean().optional().describe("Return the category and pack vocabulary with counts instead of searching"),
+    limit: z.number().int().positive().max(100).optional().describe("Max rows (default 20)"),
+  },
+  async (a) => {
+    const cat = await trap(async () => Sfx.loadCatalog());
+    if (a.listCategories) {
+      const byCategory = new Map<string, number>();
+      const byPack = new Map<string, number>();
+      for (const s of cat.sounds) {
+        byCategory.set(s.category, (byCategory.get(s.category) ?? 0) + 1);
+        byPack.set(s.pack, (byPack.get(s.pack) ?? 0) + 1);
+      }
+      return json({
+        categories: Object.fromEntries([...byCategory.entries()].sort((x, y) => y[1] - x[1])),
+        packs: Object.fromEntries([...byPack.entries()].sort((x, y) => y[1] - x[1])),
+      });
+    }
+    const hits = Sfx.searchSfx(cat, {
+      query: a.query,
+      category: a.category,
+      pack: a.pack,
+      tag: a.tag,
+      useCase: a.useCase,
+      mood: a.mood,
+      maxDuration: a.maxDuration,
+      minDuration: a.minDuration,
+      format: a.format,
+    });
+    const limit = a.limit ?? 20;
+    const rows = hits.slice(0, limit).map(Sfx.project);
+    // Flag the ones that cannot be installed as-is, before the agent picks one.
+    const installable = rows.filter((r) => r.formats.includes("ogg")).length;
+    return json({
+      matched: hits.length,
+      showing: rows.length,
+      installableAsOgg: installable,
+      models: rows,
+      next:
+        hits.length > limit
+          ? "Narrow the filters (category/tag/maxDuration) or raise `limit` to see more."
+          : "Call omni_sfx_inspect { id, need } before fetching — it checks the length against your trigger.",
+    });
+  },
+);
+
+server.tool(
+  "omni_sfx_inspect",
+  "Full record for ONE sound plus an honest fit assessment: duration and what that duration is actually good for, every downloadable format, approximate bitrate, licence, upstream source, and a warning when the length does not match the trigger you described. Use this to confirm a sound is right BEFORE fetching it.",
+  {
+    id: z.string().describe("Catalogue id from omni_sfx_search, e.g. 'ui-audio_click_001'"),
+    need: z.string().optional().describe("What you are building, e.g. 'a button click', 'looping machine ambience' — used to flag mismatches"),
+  },
+  async ({ id, need }) => {
+    const cat = await trap(async () => Sfx.loadCatalog());
+    const s = Sfx.findSfx(cat, id);
+    if (!s) {
+      const cands = Sfx.findSfxCandidates(cat, id);
+      return json({
+        found: false,
+        id,
+        candidates: cands.map(Sfx.project),
+        next: cands.length
+          ? "Several sounds share that name — pick the full id from `candidates`."
+          : "No such sound. Use omni_sfx_search to find one.",
+      });
+    }
+    const assessment = Sfx.assessSfx(s, need);
+    const installable = assessment.formats.includes("ogg");
+    return json({
+      found: true,
+      id: s.id,
+      title: s.title,
+      category: s.category,
+      pack: s.pack,
+      tags: s.tags ?? [],
+      useCases: s.use_cases ?? [],
+      mood: s.mood ?? [],
+      keywords: { en: s.keywords_en ?? [], ar: s.keywords_ar ?? [] },
+      assessment,
+      installableNow: installable,
+      installNote: installable
+        ? "Has OGG — omni_sfx_install can place it directly."
+        : "No OGG upstream. The engine only plays <name>.ogg, so installing this needs an encoder (ffmpeg/oggenc); omni_sfx_install will say so rather than installing something silent.",
+      integrity: {
+        sha256ByFormat: {
+          ogg: s.sha256_ogg ?? null,
+          mp3: s.sha256_mp3 ?? null,
+          wav: s.sha256_wav ?? null,
+          flac: s.sha256_flac ?? null,
+        },
+        sizeByFormat: {
+          ogg: s.size_ogg ?? null,
+          mp3: s.size_mp3 ?? null,
+          wav: s.size_wav ?? null,
+          flac: s.size_flac ?? null,
+        },
+      },
+      fetchWith: `omni_sfx_fetch { id: "${s.id}" }`,
+    });
+  },
+);
+
+server.tool(
+  "omni_sfx_fetch",
+  "Download ONE sound (the best available format) and verify it: the file is hashed and compared against the catalogue's SHA-256, and its audio header is parsed for real channel count and sample rate. Nothing else from the library is downloaded.",
+  {
+    id: z.string().describe("Catalogue id from omni_sfx_search / omni_sfx_inspect"),
+    format: z.string().optional().describe("Force a format: ogg | mp3 | wav | flac (default: the best available, OGG first)"),
+    dest: z.string().optional().describe("Destination folder (default: <workDir>/sfx)"),
+  },
+  async ({ id, format, dest }) => {
+    const cat = await trap(async () => Sfx.loadCatalog());
+    const s = Sfx.findSfx(cat, id);
+    if (!s) {
+      const cands = Sfx.findSfxCandidates(cat, id);
+      return json({ ok: false, error: "sound_not_found", id, candidates: cands.map(Sfx.project) });
+    }
+    const root = dest && dest.trim() ? resolve(dest.trim()) : join(config.workDir, "sfx");
+    const r = await trap(async () => Sfx.fetchSfx(s, root, { format }));
+    return json({
+      ok: true,
+      ...r,
+      durationSeconds: s.duration_sec ?? null,
+      playableInEngine: r.format === "ogg",
+      next:
+        r.format === "ogg"
+          ? `omni_sfx_install { id: "${s.id}", target: "mod"|"map", ... } to place it, then playsound.`
+          : "This format is NOT playable by the engine (it resolves every sound to <name>.ogg). Use omni_sfx_install, which converts or refuses honestly.",
+    });
+  },
+);
+
+server.tool(
+  "omni_sfx_install",
+  "Put a library sound where the game can actually play it, and print the exact playsound command. Target 'mod' writes into a mod folder; target 'map' writes into the running map's mods_folders through the agent bridge. Either way it writes assets/<ns>/sounds/<name>.ogg and MERGES assets/<ns>/sounds.json (existing events are preserved, never replaced). Only OGG is playable — if the chosen sound has no OGG and no encoder (ffmpeg/oggenc) is available, this refuses with the reason instead of installing something silent.",
+  {
+    id: z.string().describe("Catalogue id"),
+    target: z.string().describe("'mod' (needs dir) or 'map' (needs map)"),
+    dir: z.string().optional().describe("Mod folder to write into (target 'mod')"),
+    map: z.string().optional().describe("Map/world folder name (target 'map')"),
+    folder: z.string().optional().describe("Folder name to create inside the map's mods_folders (default: the namespace)"),
+    ns: z.string().optional().describe("Asset namespace, lowercase letters/digits/_ (default: 'omnisound')"),
+    event: z.string().optional().describe("sounds.json event name (default: derived from the sound title)"),
+    category: z.string().optional().describe("sounds.json category hint: master|music|record|weather|block|hostile|neutral|player|ambient|voice"),
+  },
+  async (a) => {
+    const target = (a.target ?? "").toLowerCase();
+    if (target !== "mod" && target !== "map") {
+      return json({ ok: false, error: "bad_target", hint: "target must be 'mod' or 'map'." });
+    }
+    if (target === "mod" && !a.dir) {
+      return json({ ok: false, error: "missing_dir", hint: "target 'mod' needs dir=<mod folder path>." });
+    }
+    if (target === "map" && !a.map) {
+      return json({ ok: false, error: "missing_map", hint: "target 'map' needs map=<world folder name>." });
+    }
+
+    const cat = await trap(async () => Sfx.loadCatalog());
+    const s = Sfx.findSfx(cat, a.id);
+    if (!s) {
+      return json({ ok: false, error: "sound_not_found", id: a.id, candidates: Sfx.findSfxCandidates(cat, a.id).map(Sfx.project) });
+    }
+
+    const ns = (a.ns ?? "omnisound").toLowerCase().replace(/[^a-z0-9_]/g, "");
+    if (!ns) return json({ ok: false, error: "bad_ns", hint: "ns must be lowercase letters, digits or _." });
+    const event = a.event ?? Sfx.defaultEventName(s);
+    const base = Sfx.safeSoundBase(s);
+
+    const formats = Sfx.availableFormats(s);
+    const hasOgg = formats.includes("ogg");
+    let oggBytes: Buffer | null = null;
+    let conversion: string | null = null;
+
+    if (hasOgg) {
+      const tmp = join(config.workDir, "sfx", "_install_tmp");
+      const got = await trap(async () => Sfx.fetchSfx(s, tmp, { format: "ogg" }));
+      oggBytes = await readFile(got.path);
+      if (!got.verified) {
+        return json({
+          ok: false,
+          error: "integrity_mismatch",
+          id: s.id,
+          sha256: got.sha256,
+          expected: got.expectedSha256,
+          hint: "Refusing to install a file that does not match the catalogue.",
+        });
+      }
+    } else {
+      // No OGG upstream: try a local encoder, and say so plainly if there is none.
+      const src = await trap(async () => Sfx.fetchSfx(s, join(config.workDir, "sfx", "_install_tmp")));
+      const enc = await findEncoder();
+      if (!enc) {
+        return json({
+          ok: false,
+          error: "no_ogg_and_no_encoder",
+          id: s.id,
+          availableFormats: formats,
+          reason:
+            "The engine resolves every sounds.json entry to <name>.ogg (SoundHandler.java:242), " +
+            "so this file would be copied into the pack and never played.",
+          encodersTried: Sfx.ENCODER_CANDIDATES,
+          options: [
+            "Pick a sound that has an OGG in the catalogue (omni_sfx_search { format: 'ogg' }).",
+            "Install an encoder (ffmpeg) and retry — the conversion is then automatic.",
+          ],
+        });
+      }
+      const outOgg = join(dirname(src.path), `${base}.ogg`);
+      const enc2 = await runEncoder(enc, src.path, outOgg);
+      if (enc2 !== 0) {
+        return json({ ok: false, error: "encode_failed", encoder: enc, exit: enc2, source: src.path });
+      }
+      oggBytes = await readFile(outOgg);
+      conversion = `${enc}: ${src.format} -> ogg`;
+    }
+
+    const assetRel = `assets/${ns}/sounds/${base}.ogg`;
+    const soundsRel = `assets/${ns}/sounds.json`;
+    const installed: string[] = [];
+    let mergeInfo: Sfx.SoundsJsonMerge;
+
+    if (target === "mod") {
+      const modDir = resolve((a.dir as string).trim());
+      const assetPath = join(modDir, ...assetRel.split("/"));
+      await mkdir(dirname(assetPath), { recursive: true });
+      await writeFile(assetPath, oggBytes);
+      installed.push(assetRel);
+
+      const soundsPath = join(modDir, ...soundsRel.split("/"));
+      const existing = (await fileExists(soundsPath)) ? await readFile(soundsPath, "utf8") : null;
+      mergeInfo = Sfx.mergeSoundsJson(existing, event, base, { category: a.category });
+      await mkdir(dirname(soundsPath), { recursive: true });
+      await writeFile(soundsPath, mergeInfo.text, "utf8");
+      installed.push(soundsRel);
+    } else {
+      // Through the bridge: same layout, but under the map's mods_folders root.
+      const folder = (a.folder ?? ns).replace(/[^A-Za-z0-9_.-]/g, "_");
+      const mapName = (a.map as string).trim();
+      const relAsset = `${mapName}/${folder}/${assetRel}`;
+      const relSounds = `${mapName}/${folder}/${soundsRel}`;
+
+      await trap(async () =>
+        bridge.post(
+          "/omni/mapfiles/write",
+          { root: "mods_folders", path: relAsset, encoding: "base64", content: oggBytes!.toString("base64") },
+          60000,
+        ),
+      );
+      installed.push(`mods_folders/${relAsset}`);
+
+      let existing: string | null = null;
+      try {
+        const r = (await bridge.get("/omni/mapfiles/read", {
+          root: "mods_folders",
+          path: relSounds,
+          encoding: "text",
+        })) as Record<string, unknown>;
+        const c = r.content ?? r.text ?? r.data;
+        if (typeof c === "string" && c.trim().length > 0) existing = c;
+      } catch {
+        /* no sounds.json yet — mergeSoundsJson creates one */
+      }
+      mergeInfo = Sfx.mergeSoundsJson(existing, event, base, { category: a.category });
+      await trap(async () =>
+        bridge.post(
+          "/omni/mapfiles/write",
+          { root: "mods_folders", path: relSounds, encoding: "text", content: mergeInfo.text },
+          60000,
+        ),
+      );
+      installed.push(`mods_folders/${relSounds}`);
+    }
+
+    const play = `playsound ${ns}:${event} @a`;
+    return json({
+      ok: true,
+      id: s.id,
+      target,
+      namespace: ns,
+      event,
+      file: `${base}.ogg`,
+      installed,
+      conversion,
+      soundsJson: {
+        eventCreated: mergeInfo.eventCreated,
+        soundAdded: mergeInfo.soundAdded,
+        soundsInEvent: mergeInfo.existingSounds,
+      },
+      playCommand: play,
+      next:
+        target === "map"
+          ? [
+              "Reload the map for the engine to translate mods_folders into the world resource pack:",
+              "POST /omni/world/restart (or omni_command '/omni_dev restart').",
+              `Then: ${play}`,
+              "Verify: omni_errors should show no sounds_json warning for this namespace.",
+            ].join(" ")
+          : [
+              "The sound is inside the mod folder. Install/stage the mod, then reload the world.",
+              `Then: ${play}`,
+            ].join(" "),
+    });
   },
 );
 

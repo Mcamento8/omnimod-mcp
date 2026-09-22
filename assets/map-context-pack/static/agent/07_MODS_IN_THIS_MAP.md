@@ -126,4 +126,4 @@ Log evidence is mandatory, not optional. Use these in this order:
 Always re-check the logs **after** you apply a change to the map — the point is to see what
 your change actually did, not what you expected it to do.
 
-<!-- omnimod-docs-version: omnimod-agent-docs-9 -->
+<!-- omnimod-docs-version: omnimod-agent-docs-10 -->

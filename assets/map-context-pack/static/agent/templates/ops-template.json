@@ -1,5 +1,5 @@
 {
-  "_docsVersion": "omnimod-agent-docs-9",
+  "_docsVersion": "omnimod-agent-docs-10",
   "_readme": [
     "Copy this file into build/ as ops-NNNN.json and edit it.",
     "Batches apply in FILENAME SORT ORDER, so zero-pad the number.",

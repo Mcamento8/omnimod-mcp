@@ -1,6 +1,6 @@
 {
   "name": "omnimod-mcp",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Official OmniMod MCP server — turns any AI agent into a professional map builder and Forge 1.20.1 mod author. 51 tools for map building, game control, dual-mode testing, and mod scaffolding. Free, local-first, works with Claude, Cursor, Cline, Kilo and any MCP client.",
   "type": "module",
   "private": false,

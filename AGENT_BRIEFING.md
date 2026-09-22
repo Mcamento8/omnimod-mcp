@@ -42,7 +42,7 @@ The server speaks MCP over stdio. Configure it in your client (Claude Desktop / 
 | `OMNIMOD_FORGE_COMPAT_REPO` | `https://github.com/Mcamento8/omnimod-forge-compat` (pre-linked) | Public mirror of the engine's Forge 1.20.1 compat layer (surfaced by `omni_knowledge topic='repos'`) |
 | `OMNIMOD_COMMAND_BLOCKS_REPO` | `https://github.com/Mcamento8/omnimod-command-blocks` (pre-linked) | Public mirror of the engine's command-block system (surfaced by `omni_knowledge topic='repos'`) |
 
-## What the MCP gives you (61 tools, 13 resources, 5 prompts)
+## What the MCP gives you (66 tools, 13 resources, 5 prompts)
 
 **Connection** (11): `omni_map_connect`, `omni_ping`, `omni_pair`, `omni_config`, `omni_state`, `omni_help`, `omni_logs`, `omni_errors`, `omni_notifications`, `omni_agentlog`, `omni_devpatch_verify`.
 
@@ -117,6 +117,37 @@ measured, licence-clean catalogue.
   (`{name, obj|objB64, mtl?, profile?}` — stage a model into the world store),
   `POST /omni/model3d/place|configure|animate|remove`, `GET /omni/model3d/profile`.
 - Mods ship models as `assets/<ns>/models3d/*.obj` + `<name>.obj.model3d.json`.
+
+## Sound — a mod or a map with no audio feels dead
+
+You cannot author audio, so the useful thing is a curated CC0 catalogue plus a way
+to prove what you downloaded and to put it where the engine can reach it.
+
+- `omni_sfx_library` — what the library holds (CC0, updated continuously) + the
+  engine contract.
+- `omni_sfx_search { query, category?, tag?, useCase?, mood?, maxDuration?, format? }`
+  — 1,400+ sounds: UI clicks, impacts, footsteps, weapons, monsters, sci-fi,
+  jingles, voiceover. **Arabic queries work** ("سيوف", "باب", "خطوات", "زر").
+- `omni_sfx_inspect { id, need? }` — duration, formats, SHA-256, and a warning when
+  the length does not match the trigger you described (an 8 s jingle for a button
+  click, a 0.03 s blip for looping ambience).
+- `omni_sfx_fetch { id }` — downloads ONE file, verifies its SHA-256, and parses its
+  audio header (real channel count and sample rate).
+- `omni_sfx_install { id, target:'mod'|'map', ... }` — writes
+  `assets/<ns>/sounds/<name>.ogg`, MERGES `sounds.json` (never replaces it), and
+  prints the exact `playsound` command.
+
+### ⚠️ THE OGG RULE — the one constraint that decides whether you are audible
+
+The engine builds every sound reference as `assets/<ns>/sounds/<name>.ogg`
+(`SoundHandler.java:242`) — the extension is appended unconditionally. A WAV, MP3
+or FLAC placed in a pack is copied and then **never requested**: it looks installed
+and plays nothing, with no error. `omni_sfx_install` therefore only places OGG; if
+the sound has no OGG upstream and no `ffmpeg`/`oggenc` is available it refuses with
+the reason rather than installing something silent.
+
+Also: **never overwrite a pack's `sounds.json`** — it may already define dozens of
+events. The install tool merges, and refuses a malformed document outright.
 
 **THE DOCTRINE — 3D-first, but the user's request is the specification.** For large
 or complex structures (terrain, custom buildings, organic shapes) models are always
@@ -194,7 +225,7 @@ mcp/
 ├── src/
 │   ├── index.ts          # entry point
 │   ├── selfcheck.ts      # in-process test battery
-│   ├── server.ts         # 61 tools + 13 resources + 5 prompts (incl. omni_mapdev_mode, omni_map_guide)
+│   ├── server.ts         # 66 tools + 13 resources + 5 prompts (incl. omni_mapdev_mode, omni_map_guide)
 │   ├── bridge.ts         # HTTP client with error mapping
 │   ├── config.ts         # env-driven runtime config
 │   ├── translate.ts      # 1.20→1.8 block/item name+meta translation

@@ -110,4 +110,4 @@ A restart can only reload the map that is running; name another map and you get
 | `server_thread_timeout` | Work too heavy - split the batch and retry. |
 | `unknown_endpoint` | This build predates the endpoint; `GET /omni/help` shows the truth. |
 
-<!-- omnimod-docs-version: omnimod-agent-docs-9 -->
+<!-- omnimod-docs-version: omnimod-agent-docs-10 -->

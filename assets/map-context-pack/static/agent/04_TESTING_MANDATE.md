@@ -138,4 +138,4 @@ describe a check you did not run. Never infer a result you did not observe. An h
 "unverified: could not scan, bridge unavailable" is useful; a fabricated PASS is a defect
 that will cost the next agent hours.
 
-<!-- omnimod-docs-version: omnimod-agent-docs-9 -->
+<!-- omnimod-docs-version: omnimod-agent-docs-10 -->

@@ -113,4 +113,4 @@ The three you will meet most:
 4. If you diagnose something not listed here and the cause is general, add it to
    `CHANGE_LOG.md` with the evidence so the next agent finds it.
 
-<!-- omnimod-docs-version: omnimod-agent-docs-9 -->
+<!-- omnimod-docs-version: omnimod-agent-docs-10 -->

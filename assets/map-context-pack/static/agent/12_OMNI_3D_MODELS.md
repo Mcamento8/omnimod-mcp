@@ -282,4 +282,4 @@ sustained walk across the model shows no stutter entries in the log ring.
 | library search returns nothing | too many filters at once (tags are AND) | drop a tag, or widen `maxTri`/`maxSize` |
 
 
-<!-- omnimod-docs-version: omnimod-agent-docs-9 -->
+<!-- omnimod-docs-version: omnimod-agent-docs-10 -->

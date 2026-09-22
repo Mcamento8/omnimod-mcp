@@ -23,6 +23,7 @@ import { scaffoldMod } from "./scaffold.js";
 import { inspectMod } from "./inspect.js";
 import * as MapDocs from "./mapdocs.js";
 import * as Assets3D from "./assets3d.js";
+import * as Sfx from "./sfx.js";
 import { rm, mkdir, stat, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -272,9 +273,216 @@ async function main(): Promise<void> {
     process.stderr.write(
       `  assets3d LIVE: ${live.count} models, fetched ${got.id} and verified its SHA-256\n`,
     );
+    const sfxLive = await Sfx.loadCatalog({ refresh: true });
+    assert(sfxLive.sounds.length > 100, `live SFX catalogue suspiciously small: ${sfxLive.sounds.length}`);
+    const click = Sfx.searchSfx(sfxLive, { query: "click", category: "ui" })[0];
+    assert(click !== undefined, "live SFX catalogue has no UI click");
+    const gotSfx = await Sfx.fetchSfx(click, join(tmp, "live-sfx"), { format: "ogg" });
+    assert(gotSfx.verified, `live SFX fetch failed verification: got ${gotSfx.sha256}`);
+    assert(gotSfx.header.recognised, "the downloaded sound's header was not recognised");
+    process.stderr.write(
+      `  sfx LIVE: ${sfxLive.sounds.length} sounds, fetched ${gotSfx.id} and verified it ` +
+        `(${gotSfx.header.container}, ${gotSfx.header.channels}ch @ ${gotSfx.header.sampleRate}Hz)\n`,
+    );
   } else {
     process.stderr.write("  assets3d LIVE: skipped (set OMNIMOD_SELFCHECK_LIVE_ASSETS=1 to enable)\n");
+    process.stderr.write("  sfx LIVE: skipped (set OMNIMOD_SELFCHECK_LIVE_ASSETS=1 to enable)\n");
   }
+
+  // ------------------------------------------------------------------
+  // Sound library (pure parts — no network required)
+  // ------------------------------------------------------------------
+  // The sound tools promise three things an agent cannot get elsewhere: a
+  // search that understands what it is asking for, a download it can PROVE, and
+  // an install that will not silently produce a file the engine never plays.
+
+  const sfxCat: Sfx.SfxCatalog = {
+    version: "test",
+    license_audio: "CC0-1.0",
+    count: 3,
+    sounds: [
+      {
+        id: "ui-audio_click5", title: "click 5", pack: "ui-audio", category: "ui",
+        tags: ["button", "click"], use_cases: ["menu navigation"], mood: ["neutral"],
+        keywords_en: ["click", "button"], keywords_ar: ["زر", "ضغطة"],
+        duration_sec: 0.032, formats: ["ogg"],
+        download_url_ogg: "https://example.invalid/a/click5.ogg", size_ogg: 4532,
+        sha256_ogg: "a".repeat(64), license: "CC0-1.0",
+      },
+      {
+        id: "oga-512-retro_sword2", title: "sword 2", pack: "oga-512-retro", category: "retro",
+        tags: ["sword", "16-bit"], use_cases: ["combat"], mood: ["aggressive"],
+        keywords_en: ["sword"], keywords_ar: ["ضربة"],
+        duration_sec: 0.096, formats: ["wav"],
+        download_url_wav: "https://example.invalid/a/The Pack [512 sounds]/sword2.wav", size_wav: 8000,
+        sha256_wav: "b".repeat(64), license: "CC0-1.0",
+      },
+      {
+        id: "music-jingles_hit12", title: "jingles HIT12", pack: "music-jingles", category: "music-jingle",
+        tags: ["win"], use_cases: ["level complete"], mood: ["triumphant"],
+        keywords_en: ["win", "success"], keywords_ar: ["فوز"],
+        duration_sec: 8.5, formats: ["ogg"],
+        download_url_ogg: "https://example.invalid/a/hit12.ogg", size_ogg: 90000,
+        sha256_ogg: "c".repeat(64), license: "CC0-1.0",
+      },
+    ],
+  };
+
+  // Filters.
+  assert(Sfx.searchSfx(sfxCat, { category: "ui" }).length === 1, "sfx category filter");
+  assert(Sfx.searchSfx(sfxCat, { tag: ["button"] }).length === 1, "sfx tag filter");
+  assert(Sfx.searchSfx(sfxCat, { format: "ogg" }).length === 2, "sfx format filter");
+  assert(Sfx.searchSfx(sfxCat, { maxDuration: 1 }).length === 2, "sfx maxDuration filter");
+  assert(Sfx.searchSfx(sfxCat, { minDuration: 5 }).length === 1, "sfx minDuration filter");
+  assert(Sfx.searchSfx(sfxCat, { useCase: "menu" }).length === 1, "sfx useCase filter");
+  assert(Sfx.searchSfx(sfxCat, { mood: "triumphant" }).length === 1, "sfx mood filter");
+
+  // Ranking: identity beats category, and a Latin term must match at a word
+  // boundary — otherwise "win" scores a full hit on "swing3" and buries the
+  // real win jingle.
+  const sfxRank = Sfx.searchSfx(sfxCat, { query: "click" });
+  assert(sfxRank.length === 1 && sfxRank[0].id === "ui-audio_click5", "sfx search ranking");
+  const swingTrap: Sfx.SfxCatalog = {
+    ...sfxCat,
+    sounds: [
+      { ...sfxCat.sounds[0], id: "x_swing3", title: "swing 3", keywords_ar: [] },
+      { ...sfxCat.sounds[2], id: "x_win", title: "win", keywords_ar: [] },
+    ],
+  };
+  assert(
+    Sfx.searchSfx(swingTrap, { query: "win" })[0].id === "x_win",
+    "a Latin term must match at a word boundary (swing must not beat win)",
+  );
+
+  // Arabic bridge: a term the catalogue does not carry must still reach the
+  // English sounds that mean the same thing.
+  assert(Sfx.expandTerms("سيوف").includes("sword"), "Arabic term must expand to its English synonyms");
+  assert(Sfx.expandTerms("زر").includes("click"), "Arabic 'زر' must expand to click");
+  assert(Sfx.expandTerms("nonsense").length === 1, "an unknown term expands to itself only");
+  assert(
+    Sfx.searchSfx(sfxCat, { query: "سيوف" }).some((s) => s.id === "oga-512-retro_sword2"),
+    "an Arabic query must reach the English-matching sound",
+  );
+  assert(
+    Sfx.searchSfx(sfxCat, { query: "زر" })[0].id === "ui-audio_click5",
+    "an Arabic query must reach the sound that carries it as an Arabic keyword",
+  );
+
+  // Duration role + fit warnings.
+  assert(Sfx.durationRole(0.05).includes("blip"), "a 50 ms sound is a blip");
+  assert(Sfx.durationRole(0.4).includes("UI click"), "a 0.4 s sound is a UI click");
+  assert(Sfx.durationRole(20).includes("music"), "a 20 s sound is music/ambience");
+  const aClick = Sfx.assessSfx(sfxCat.sounds[0], "a button click");
+  assert(aClick.mismatchWarnings.length === 0, "a 32 ms click suits a button click");
+  assert(aClick.approxKbps === null, "a sub-0.5 s file must not report a meaningless bitrate");
+  const aJingle = Sfx.assessSfx(sfxCat.sounds[2], "a button click");
+  assert(aJingle.mismatchWarnings.length > 0, "an 8.5 s jingle must be flagged for a click trigger");
+  const aAmbience = Sfx.assessSfx(sfxCat.sounds[0], "looping ambience");
+  assert(aAmbience.mismatchWarnings.length > 0, "a 32 ms blip must be flagged for ambience");
+
+  // Format selection.
+  assert(Sfx.availableFormats(sfxCat.sounds[1]).join() === "wav", "wav-only sound reports wav");
+  assert(Sfx.chooseFormat(sfxCat.sounds[1]) === "wav", "chooseFormat picks the only option");
+  let choseThrew = false;
+  try {
+    Sfx.chooseFormat(sfxCat.sounds[1], "ogg");
+  } catch {
+    choseThrew = true;
+  }
+  assert(choseThrew, "asking for a format the sound lacks must throw, not silently substitute");
+
+  // URL encoding: the upstream catalogue contains raw spaces and brackets, and
+  // a client that fetches them verbatim gets InvalidURL.
+  const messy = "https://example.invalid/a/The Pack [512 sounds]/sword 2.wav";
+  const enc = Sfx.encodeUrl(messy);
+  assert(!enc.includes(" "), `encodeUrl left a space: ${enc}`);
+  assert(enc.includes("The%20Pack%20%5B512%20sounds%5D"), `encodeUrl did not encode the path: ${enc}`);
+  assert(decodeURIComponent(enc) === messy, "encodeUrl must be reversible");
+  assert(Sfx.encodeUrl(enc) === enc, "encodeUrl must be idempotent on already-encoded input");
+
+  // sounds.json merge: create, preserve, idempotent, and refuse to clobber.
+  const m1 = Sfx.mergeSoundsJson(null, "click", "ui_click5");
+  assert(m1.eventCreated && m1.soundAdded && JSON.parse(m1.text).click.sounds[0] === "ui_click5", "merge into an empty doc creates the event and adds the sound");
+  const seeded = JSON.stringify({ door: { category: "block", sounds: ["door_open"] } });
+  const m2 = Sfx.mergeSoundsJson(seeded, "click", "ui_click5", { category: "ui" });
+  const parsed2 = JSON.parse(m2.text);
+  assert(m2.eventCreated && m2.soundAdded, "a new event on an existing document is reported as a created EVENT");
+  assert(
+    JSON.stringify(parsed2.door) === JSON.stringify({ category: "block", sounds: ["door_open"] }),
+    "merging must not touch an existing event",
+  );
+  assert(parsed2.click.category === "ui", "category hint applied");
+  const m3 = Sfx.mergeSoundsJson(m2.text, "click", "ui_click5");
+  assert(!m3.soundAdded && m3.existingSounds === 1, "re-merging the same sound is a no-op");
+  let mergeThrew = false;
+  try {
+    Sfx.mergeSoundsJson("{ not json", "x", "y");
+  } catch {
+    mergeThrew = true;
+  }
+  assert(mergeThrew, "a malformed sounds.json must be refused, never overwritten");
+  let shapeThrew = false;
+  try {
+    Sfx.mergeSoundsJson(JSON.stringify({ click: ["not-an-object"] }), "click", "x");
+  } catch {
+    shapeThrew = true;
+  }
+  assert(shapeThrew, "an existing non-object event must be refused");
+
+  // Audio header probe — real parsing, no decoder.
+  const wavBuf = Buffer.alloc(48);
+  wavBuf.write("RIFF", 0, "latin1");
+  wavBuf.writeUInt32LE(40, 4);
+  wavBuf.write("WAVE", 8, "latin1");
+  wavBuf.write("fmt ", 12, "latin1");
+  wavBuf.writeUInt32LE(16, 16);
+  wavBuf.writeUInt16LE(1, 20);
+  wavBuf.writeUInt16LE(2, 22);
+  wavBuf.writeUInt32LE(44100, 24);
+  wavBuf.writeUInt32LE(176400, 28);
+  wavBuf.writeUInt16LE(4, 32);
+  wavBuf.writeUInt16LE(16, 34);
+  const hWav = Sfx.probeAudioHeader(wavBuf);
+  assert(
+    hWav.container === "wav" && hWav.channels === 2 && hWav.sampleRate === 44100 && hWav.bitsPerSample === 16,
+    `wav header probe wrong: ${JSON.stringify(hWav)}`,
+  );
+
+  const oggBuf = Buffer.alloc(64);
+  oggBuf.write("OggS", 0, "latin1");
+  Buffer.from([0x01, 0x76, 0x6f, 0x72, 0x62, 0x69, 0x73]).copy(oggBuf, 10);
+  oggBuf.writeUInt32LE(0, 17);
+  oggBuf.writeUInt8(2, 21);
+  oggBuf.writeUInt32LE(48000, 22);
+  const hOgg = Sfx.probeAudioHeader(oggBuf);
+  assert(
+    hOgg.container === "ogg/vorbis" && hOgg.channels === 2 && hOgg.sampleRate === 48000,
+    `ogg header probe wrong: ${JSON.stringify(hOgg)}`,
+  );
+
+  const flacBuf = Buffer.alloc(64);
+  flacBuf.write("fLaC", 0, "latin1");
+  const packed = (32000n << 44n) | (0n << 41n) | (15n << 36n); // 1 channel, 16 bit
+  flacBuf.writeBigUInt64BE(packed, 18);
+  const hFlac = Sfx.probeAudioHeader(flacBuf);
+  assert(
+    hFlac.container === "flac" && hFlac.channels === 1 && hFlac.sampleRate === 32000 && hFlac.bitsPerSample === 16,
+    `flac header probe wrong: ${JSON.stringify(hFlac)}`,
+  );
+
+  const junk = Sfx.probeAudioHeader(Buffer.from("not audio at all, really not", "utf8"));
+  assert(!junk.recognised, "unrecognised bytes must be reported as unrecognised, not guessed at");
+
+  // Cache staleness.
+  assert(Sfx.catalogIsValid(sfxCat), "a well-formed SFX catalogue is accepted");
+  assert(!Sfx.catalogIsValid({ count: 1, sounds: [{ title: "x" }] }), "a catalogue without ids is rejected");
+  assert(!Sfx.catalogIsValid({ sounds: [] }), "an empty catalogue is rejected");
+  assert(!Sfx.catalogIsValid(null), "null is rejected");
+
+  process.stderr.write(
+    "  sfx: filters/ranking/arabic-bridge/duration-fit/format/url-encoding/" +
+      "sounds.json-merge/header-probe/cache-staleness pass\n",
+  );
 
   // ------------------------------------------------------------------
   // Per-map agent context pack (mapdocs.ts + the exported engine pack)
@@ -353,6 +561,27 @@ async function main(): Promise<void> {
       (f) => f.rel.includes("12_OMNI_3D_MODELS") && f.text.includes("verified: false"),
     ),
     "the pack must tell the agent what a failed library verification means",
+  );
+  // [SOUND 2026-09-22] the sound contract is part of the pack contract: a map
+  // agent must learn that a CC0 sound library exists, how to reach it, AND the
+  // constraint that decides whether its work is audible at all — the engine
+  // resolves every sound reference to <name>.ogg.
+  assert(
+    pack.static.some(
+      (f) =>
+        f.rel.includes("13_SOUND_AND_AUDIO") &&
+        f.text.includes("omni_sfx_search") &&
+        f.text.includes("omni_sfx_install") &&
+        f.text.includes("THE OGG RULE") &&
+        f.text.includes("sounds.json"),
+    ),
+    "the sound contract is missing from the pack — re-export MapDevWorkspaceDocs",
+  );
+  assert(
+    pack.static.some(
+      (f) => f.rel.includes("13_SOUND_AND_AUDIO") && f.text.includes("playsound"),
+    ),
+    "the sound doc must show how to actually play the event",
   );
   process.stderr.write(
     `  pack: ${pack.version}, ${pack.static.length} static + ${pack.living.length} living\n`,

@@ -277,6 +277,7 @@ export function sourceRepos(
   forgeCompatRepoUrl: string | null,
   commandBlocksRepoUrl: string | null,
   assetLibraryRepoUrl: string | null = null,
+  sfxRepoUrl: string | null = null,
 ): ReadonlyArray<{
   system: string;
   url: string;
@@ -306,6 +307,14 @@ export function sourceRepos(
       env: "OMNIMOD_ASSET_LIBRARY_REPO",
       contains:
         "5,952 public-domain (CC0 1.0) models in Wavefront OBJ with their MTL and PNG textures: creatures, buildings, furniture, props, vehicles, nature, characters. catalog/index.min.json is the whole catalogue in one file — per model it records the ENGINE-measured triangle count, real size in blocks, exact bounds, animation capability (named o/g parts), material colours and texture paths, and the SHA-256 of the OBJ. Use omni_3d_search to find, omni_3d_inspect to judge, omni_3d_fetch to pull ONLY what you chose (and prove its hash), omni_3d_upload to put it in the running game. Commercial use allowed, no attribution required. Prefer this over hand-authoring a mesh you could have picked from a measured, licence-clean catalogue.",
+    },
+    {
+      system: "CC0 game-sound library (OGG/WAV/FLAC)",
+      url: sfxRepoUrl ?? "(unlinked — omni_sfx_* tools disabled)",
+      status: sfxRepoUrl ? "linked" : "not-set",
+      env: "OMNIMOD_SFX_REPO",
+      contains:
+        "1,400+ public-domain (CC0 1.0) game sounds from Kenney and OpenGameArt, with index.json as the whole catalogue in one file — per sound it records the category, tags, use cases, mood, bilingual keywords (English + Arabic), duration, every downloadable format with its size and SHA-256, and the upstream source. Use omni_sfx_search to find (Arabic queries work), omni_sfx_inspect to judge the duration against your trigger, omni_sfx_fetch to pull ONE file and prove its hash, omni_sfx_install to place it and merge sounds.json. CRITICAL: only OGG is playable — the engine resolves every sound reference to <name>.ogg, so a WAV/MP3/FLAC in a pack is copied but never played.",
     },
   ];
 }

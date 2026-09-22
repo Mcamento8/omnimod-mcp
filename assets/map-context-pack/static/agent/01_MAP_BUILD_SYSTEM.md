@@ -276,4 +276,4 @@ locked); light recompute near hidden blocks treats them as transparent; arrows p
 | Web, single-thread | same as desktop logically | full |
 | Web, worker mode | client-side world writes across the worker boundary are not guaranteed | partial: use `/omni_dev`, or edit while the server is stopped |
 
-<!-- omnimod-docs-version: omnimod-agent-docs-9 -->
+<!-- omnimod-docs-version: omnimod-agent-docs-10 -->

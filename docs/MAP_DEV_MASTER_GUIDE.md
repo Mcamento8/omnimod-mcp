@@ -480,6 +480,21 @@ omni_command {command:"/omni3d interaction nearest interact [{\"type\":\"animati
 omni_command {command:"/omni3d animate nearest open toggle"}
 ```
 
+### 14.2b Sound — CC0 audio for a mod or a map
+
+```bash
+omni_sfx_search {query:"button click", format:"ogg", maxDuration:1}   # find
+omni_sfx_inspect {id:"ui-audio_click5", need:"a button click"}       # judge
+omni_sfx_fetch   {id:"ui-audio_click5"}                              # download + verify SHA-256
+omni_sfx_install {id:"ui-audio_click5", target:"map", map:"my_map", event:"click"}
+omni_command {command:"playsound omnisound:click @a"}                # hear it
+```
+
+**Only `.ogg` is playable.** The engine resolves every `sounds.json` entry to
+`assets/<ns>/sounds/<entry>.ogg` — a WAV/MP3/FLAC in a pack is copied but never
+requested. `omni_sfx_install` places OGG only and says so when it cannot.
+After installing into a map, reload it so the world resource pack is rebuilt.
+
 ### 14.3 The profile JSON (per-model structure customization)
 
 ```json
