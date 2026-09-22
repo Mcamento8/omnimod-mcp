@@ -11,6 +11,30 @@ itself is software, and software needs its own engineers. If you are about to ed
 context pack or anything that affects what the pack says, you are the audience for this
 file. **Read it before you write a single line.**
 
+## 0. WHERE YOU WORK AND HOW YOU SHIP (binding — owner rule 2026-09-20)
+
+1. **You EDIT the game in the PROJECT ROOT, not inside the map.**
+   The engine lives at `C:/Users/Mr Kimr/Desktop/OmniMod` (sources/**). This map
+   is your instrument: it runs the real game so you can reproduce a gap, read
+   real logs and prove a fix. It is not where the fix is written.
+   The in-map compat files (`_dev/compat/overlay.json` and friends) are a per-map
+   runtime layer — a change there never leaves this map, so it is never a fix for
+   the game's compatibility system.
+2. **You SHIP with one command, and it does not rebuild the APK.**
+```
+omnimod push                 # push to every connected development copy
+omnimod pushworld <map>      # ...and auto-login into that world after restart
+omnimod watch                # re-push on every save
+omnimod status               # patch status on the device
+```
+   It works from ANY directory. It recompiles, builds a patch DEX, pushes it to
+   the device exchange folder and restarts the game, which applies the patch at
+   boot. A full APK rebuild is needed ONLY for the trees the tool refuses
+   (`sources/android-native`, the webapk module bootstrap, `platform-api`) and
+   for assets/EPK. Never start a full rebuild for a Java-only change.
+3. **Edit → push → prove → record.** Prove with the live probes that failed
+   before, then write the evidence record + fix report + CHANGE_LOG entry.
+
 ## 1. You have two jobs, not one
 
 1. **The code change** (engine source, MCP source, pipeline docs, scripts). The obvious deliverable.
@@ -259,4 +283,4 @@ If any of these is missing, the task is not done. The map-building agents who pi
 this work tomorrow will not know what you shipped, and you will have wasted their first
 hour on every new map they touch.
 
-<!-- omnimod-docs-version: omnimod-agent-docs-4 -->
+<!-- omnimod-docs-version: omnimod-agent-docs-9 -->

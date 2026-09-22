@@ -110,6 +110,16 @@ An all-green test run that cannot fail is not evidence. Prove your check works:
 - [ ] **Mod-bearing maps:** after installing or changing a mod, re-verify across all three
       phases: world load, world entry, and in-game interaction with the mod's content.
 
+## 3D model work — the extra battery
+
+Any change that places, moves, resizes, animates or wires an interaction on a 3D
+world model ALSO owes the 3D battery in `agent/12_OMNI_3D_MODELS.md` §9:
+`/omni3d list` + `/omni3d info nearest` checks, the walk-on-top test (the player
+must STAND on the model — sinking or jittering is a FAIL), the interaction test,
+the world-reload persistence test, and performance evidence from the log ring
+(`/omni/logs?q=omni3d` — no new WARN/ERROR). A model that renders but cannot be
+walked on, or that stutters on a weak device, is NOT done.
+
 ## Report every run
 
 Write one report per task into
@@ -128,4 +138,4 @@ describe a check you did not run. Never infer a result you did not observe. An h
 "unverified: could not scan, bridge unavailable" is useful; a fabricated PASS is a defect
 that will cost the next agent hours.
 
-<!-- omnimod-docs-version: omnimod-agent-docs-4 -->
+<!-- omnimod-docs-version: omnimod-agent-docs-9 -->

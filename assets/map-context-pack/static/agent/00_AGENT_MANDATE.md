@@ -88,4 +88,4 @@ You are explicitly authorised — and required — to correct the living documen
 - [ ] `MAP_OVERVIEW.md`, `CHANGE_LOG.md`, `FILE_MAP.md` updated.
 - [ ] Any known remaining gap stated honestly to the user.
 
-<!-- omnimod-docs-version: omnimod-agent-docs-4 -->
+<!-- omnimod-docs-version: omnimod-agent-docs-9 -->

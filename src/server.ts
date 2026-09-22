@@ -59,7 +59,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { writeFile, mkdir, readFile } from "node:fs/promises";
+import { writeFile, mkdir, readFile, readdir, stat as fsStat } from "node:fs/promises";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -71,6 +71,7 @@ import * as Shapes from "./shapes.js";
 import { scaffoldMod, type ModSpec } from "./scaffold.js";
 import { inspectMod } from "./inspect.js";
 import * as MapDocs from "./mapdocs.js";
+import * as Assets3D from "./assets3d.js";
 import {
   PROJECT_IDENTITY,
   NON_NEGOTIABLE_RULES,
@@ -88,7 +89,7 @@ import { join } from "node:path";
 const server = new McpServer(
   {
     name: "omnimod-mcp",
-    version: "1.3.0",
+    version: "1.4.0",
   },
   { capabilities: { tools: {}, resources: {}, prompts: {} } },
 );
@@ -113,6 +114,24 @@ function trap<T>(fn: () => Promise<T>) {
   return fn().then((v) => v).catch((e) => {
     throw new Error(describeError(e));
   });
+}
+
+/** Directory listing that never throws (a missing folder is just "empty"). */
+async function readdirSafe(dir: string): Promise<string[]> {
+  try {
+    return await readdir(dir);
+  } catch {
+    return [];
+  }
+}
+
+/** Existence probe that never throws. */
+async function fileExists(p: string): Promise<boolean> {
+  try {
+    return (await fsStat(p)).isFile();
+  } catch {
+    return false;
+  }
 }
 
 // =====================================================================
@@ -275,6 +294,30 @@ server.tool(
   "Back to the main menu. Required before omni_world_create if a world is already running.",
   {},
   async () => json(await trap(async () => bridge.post("/omni/world/quit", {}))),
+);
+
+server.tool(
+  "omni_world_restart",
+  "RELOAD the running map (quit -> re-enter the same world). Use it when a change is too big for the live 2-second apply pass: staged mods, functions wired by the map's <ns>:load, command-block chains that only initialise on world load, or a restructured build order. The restart re-applies every pending/changed _dev/ batch and re-runs the map's load function, so it also doubles as 'apply everything now'. Returns {ok, world, restarted, ready, waitedMs}; if ready=false, poll omni_state or POST /omni/wait {until:'worldReady'}.",
+  {
+    name: z.string().max(64).optional().describe("Defaults to the world that is currently running. Must be that same world — a restart can only reload the loaded map."),
+    waitForReady: z.boolean().optional().describe("Default true: block until the world is playable again (bounded by timeoutMs)."),
+    timeoutMs: z.number().int().min(2000).max(120000).optional().describe("Bound for the whole restart (default 30000)."),
+  },
+  async (args) => json(await trap(async () => bridge.post("/omni/world/restart", args ?? {}, 120000))),
+);
+
+server.tool(
+  "omni_map_connect",
+  "ONE-CALL connection: read the game-owned live-control descriptor out of a map folder (worlds/<map>/_dev/state/agentlink.json) and point this MCP session at that map's Agent Link bridge — host, port and token are all picked up automatically, no pairing code and no manual token pasting. Anything that can read the map folder already holds the credential, so this is all an agent needs to take FULL control of that map (build, commands, player control, testing, omni_world_restart). Call it with just {map:\"<name>\"} when OMNIMOD_WORLDS_DIR or OMNIMOD_PROJECT_ROOT is set, or pass mapDir/worldsDir explicitly. It finishes with a live ping + state so you know the bridge answers and whether a world is loaded.",
+  {
+    map: z.string().max(128).optional().describe("Map (world) folder name, e.g. 'Monster War'."),
+    mapDir: z.string().optional().describe("Absolute path of the map folder itself (instead of map)."),
+    worldsDir: z.string().optional().describe("Absolute path of the worlds folder that contains the map."),
+    host: z.string().optional().describe("Override the device host/IP. Default: the current config host (or 127.0.0.1)."),
+    enter: z.boolean().optional().describe("Default false. When true and no world is loaded, also POST /omni/world/enter for this map."),
+  },
+  async (args) => json(await trap(async () => connectFromMapFolder(args ?? {}))),
 );
 
 server.tool(
@@ -813,8 +856,8 @@ server.tool(
       case "endpoints":        return json(ENDPOINT_CATALOG);
       case "troubleshooting":  return json(MOD_TROUBLESHOOTING);
       case "mapdev":           return json({ workflow: MAP_DEV_GUIDE, fullGuide: "omni_map_guide tool or omnimod://knowledge/map-dev-guide resource", modeTool: "omni_mapdev_mode", note: "The 8-phase professional map workflow. The full guide text is one call away." });
-      case "repos":            return json({ repos: sourceRepos(config.forgeCompatRepoUrl, config.commandBlocksRepoUrl), note: "Public mirrors of the two engine systems (pre-linked by default; override with OMNIMOD_FORGE_COMPAT_REPO / OMNIMOD_COMMAND_BLOCKS_REPO env vars or omni_config)." });
-      case "all":              return json({ identity: PROJECT_IDENTITY, rules: NON_NEGOTIABLE_RULES, pitfalls: COMMON_PITFALLS, commands: COMMAND_GUIDE, recipes: RECIPE_GUIDE, staging: STAGING_PATH_TEMPLATE, endpoints: ENDPOINT_CATALOG, troubleshooting: MOD_TROUBLESHOOTING, mapdev: MAP_DEV_GUIDE, repos: sourceRepos(config.forgeCompatRepoUrl, config.commandBlocksRepoUrl) });
+      case "repos":            return json({ repos: sourceRepos(config.forgeCompatRepoUrl, config.commandBlocksRepoUrl, config.assetLibraryRepoUrl), note: "Public mirrors of the engine systems and the CC0 3D model library (pre-linked by default; override with OMNIMOD_FORGE_COMPAT_REPO / OMNIMOD_COMMAND_BLOCKS_REPO / OMNIMOD_ASSET_LIBRARY_REPO env vars or omni_config)." });
+      case "all":              return json({ identity: PROJECT_IDENTITY, rules: NON_NEGOTIABLE_RULES, pitfalls: COMMON_PITFALLS, commands: COMMAND_GUIDE, recipes: RECIPE_GUIDE, staging: STAGING_PATH_TEMPLATE, endpoints: ENDPOINT_CATALOG, troubleshooting: MOD_TROUBLESHOOTING, mapdev: MAP_DEV_GUIDE, repos: sourceRepos(config.forgeCompatRepoUrl, config.commandBlocksRepoUrl, config.assetLibraryRepoUrl) });
     }
   },
 );
@@ -837,6 +880,106 @@ const mapLocator = {
 
 async function locate(a: { map?: string; mapDir?: string; worldsDir?: string }) {
   return MapDocs.resolveMapDir(a, { worldsDir: config.worldsDir, projectRoot: config.projectRoot });
+}
+
+/**
+ * [v4 2026-09-16] The "reaching the map folder == controlling the map" handshake.
+ *
+ * The game writes worlds/<map>/_dev/state/agentlink.json (game-owned, refreshed on
+ * every world load) containing the port and the map-scoped grant token. Read it,
+ * apply it to the live session config, and prove the bridge answers — so an agent
+ * that found the folder needs nothing else: no pairing window, no 8-char code, no
+ * copy-pasted token, and the same token keeps working across restarts.
+ */
+async function connectFromMapFolder(a: {
+  map?: string;
+  mapDir?: string;
+  worldsDir?: string;
+  host?: string;
+  enter?: boolean;
+}): Promise<unknown> {
+  const { dir, map, how } = await locate(a);
+  const descriptorPath = join(dir, "_dev", "state", "agentlink.json");
+  let raw: string;
+  try {
+    raw = await readFile(descriptorPath, "utf8");
+  } catch (e) {
+    return {
+      ok: false,
+      error: "no_agentlink_descriptor",
+      mapDir: dir,
+      expectedFile: descriptorPath,
+      message:
+        "This map folder has no live-control descriptor yet. The game writes it the first "
+        + "time the map is opened with its _dev/ workspace (Map Builder flow, or after any "
+        + "omni_world_create with a void template). Open/enter the map once on the device, "
+        + "then call this tool again.",
+      cause: e instanceof Error ? e.message : String(e),
+    };
+  }
+
+  let desc: Record<string, unknown>;
+  try {
+    desc = JSON.parse(raw) as Record<string, unknown>;
+  } catch (e) {
+    return { ok: false, error: "bad_agentlink_descriptor", mapDir: dir, expectedFile: descriptorPath, cause: String(e) };
+  }
+
+  const token = typeof desc.token === "string" ? desc.token : "";
+  if (!token) {
+    return { ok: false, error: "descriptor_has_no_token", mapDir: dir, expectedFile: descriptorPath, descriptor: desc };
+  }
+  if (desc.enabled === false) {
+    return {
+      ok: false,
+      error: "map_folder_access_disabled",
+      mapDir: dir,
+      message:
+        "The player turned OFF 'Map Folder Agent Access' in the game options. Only the player "
+        + "can turn it back on (Options -> Map Folder Agent Access). Everything in the folder "
+        + "still works — batches still apply — only live agent control is off.",
+    };
+  }
+
+  const port = typeof desc.port === "number" ? desc.port : config.port;
+  const host = (a.host && a.host.trim()) || config.host || "127.0.0.1";
+  config.host = host;
+  config.port = port;
+  config.token = token;
+
+  const ping = await bridge.getPreAuth("/omni/ping").catch((e) => ({ ok: false, error: describeError(e) }));
+  const out: Record<string, unknown> = {
+    ok: true,
+    connected: true,
+    map,
+    mapDir: dir,
+    resolvedBy: how,
+    descriptor: descriptorPath,
+    bridge: `http://${host}:${port}`,
+    token: `${token.slice(0, 4)}…${token.slice(-4)} (map-scoped grant, from the map folder)`,
+    scope: desc.scope ?? "map",
+    scopeNote: desc.scopeNote ?? "FULL control inside this map; /omni/world/create and /omni/world/enter <other map> are refused.",
+    ping,
+  };
+
+  if (ping && (ping as { ok?: boolean }).ok === true) {
+    const state = await bridge.get("/omni/state").catch((e) => ({ ok: false, error: describeError(e) }));
+    out.state = state;
+    const st = state as { world?: { name?: string } | null; inWorld?: boolean; screen?: string };
+    const inWorld = st?.inWorld === true || (st?.world && st.world.name ? true : false);
+    out.worldLoaded = inWorld;
+    if (!inWorld && a.enter === true) {
+      out.enter = await bridge.post("/omni/world/enter", { name: map }).catch((e) => ({ ok: false, error: describeError(e) }));
+    } else if (!inWorld) {
+      out.nextStep = `No world is loaded. Call omni_world_enter {name:"${map}"} (or this tool again with enter:true).`;
+    }
+  } else {
+    out.nextStep =
+      "The bridge did not answer. The token is installed — check that the game is running, "
+      + "that the device IP is reachable, and that Agent Dev Link / Map Folder Agent Access is ON.";
+  }
+  out.config = describeConfig();
+  return out;
 }
 
 server.tool(
@@ -1229,7 +1372,7 @@ server.resource(
   "Engine source repositories (Forge compat layer + command-block system)",
   "omnimod://knowledge/repos",
   async () => ({
-    contents: [{ uri: "omnimod://knowledge/repos", mimeType: "application/json", text: JSON.stringify({ repos: sourceRepos(config.forgeCompatRepoUrl, config.commandBlocksRepoUrl), note: "Public mirrors of the two engine systems (pre-linked by default; override via OMNIMOD_FORGE_COMPAT_REPO / OMNIMOD_COMMAND_BLOCKS_REPO env vars or omni_config)." }, null, 2) }],
+    contents: [{ uri: "omnimod://knowledge/repos", mimeType: "application/json", text: JSON.stringify({ repos: sourceRepos(config.forgeCompatRepoUrl, config.commandBlocksRepoUrl, config.assetLibraryRepoUrl), note: "Public mirrors of the engine systems and the CC0 3D model library (pre-linked by default; override via the OMNIMOD_*_REPO env vars or omni_config)." }, null, 2) }],
   }),
 );
 
@@ -1515,6 +1658,330 @@ server.prompt(
       "Report honestly: PASS / PARTIAL / FAIL, what matched, what did not, and what you could not check.",
     ].join("\n");
     return { messages: [{ role: "user", content: { type: "text", text: body } }] };
+  },
+);
+
+// =====================================================================
+// 3D MODEL LIBRARY (CC0) — search, verify, fetch, upload, place
+// =====================================================================
+//
+// The loop these tools exist for: an agent needs a 3D model (a creature, a
+// building, a chair) and must be able to (a) find candidates, (b) decide from
+// MEASUREMENTS whether one is right, (c) pull only the one it picked and prove
+// the bytes are the ones that were measured, then (d) put it in the world.
+//
+// The catalogue is fetched lazily and cached on disk, so a session that never
+// touches 3D pays nothing, and a session that does pays for one small file.
+
+const LIB_HINT =
+  "If the library is unlinked or unreachable, set OMNIMOD_ASSET_LIBRARY_REPO, " +
+  "or point OMNIMOD_ASSET_LIBRARY_PATH at a local clone to work offline.";
+
+server.tool(
+  "omni_3d_library",
+  "The OmniMod CC0 3D model library: what it contains, where it lives, and how to use it. Call this first if you need a 3D model for a map or a mod (creature, building, furniture, prop, vehicle, nature). Every model is CC0 — commercial use allowed, no attribution required. Reports measured totals from the catalogue itself.",
+  { refresh: z.boolean().optional().describe("Re-download the catalogue instead of using the cached copy") },
+  async ({ refresh }) => {
+    const cat = await trap(async () => Assets3D.loadCatalog({ refresh }));
+    return json({
+      ...Assets3D.librarySummary(cat),
+      howTo: [
+        "1. omni_3d_search { query, category?, tag?, maxTri?, maxSize?, anim?, textured? } — find candidates.",
+        "2. omni_3d_inspect { id } — the full engine-measured record + whether it really fits your need.",
+        "3. omni_3d_fetch { id } — download ONLY that model (OBJ + MTL + textures) and verify its SHA-256.",
+        "4. omni_3d_upload { id | dir } — push it into the running game (POST /omni/model3d/upload).",
+        "5. omni_3d_place { model, x, y, z } — put it in the world.",
+        "",
+        "The engine's own limits apply: 1 OBJ unit == 1 block, <= 30000 triangles per model,",
+        "and per-part animation needs a model whose catalogue 'anim' is two-part or per-part.",
+      ],
+      hint: LIB_HINT,
+    });
+  },
+);
+
+server.tool(
+  "omni_3d_search",
+  "Search the CC0 3D model library by free text and/or structured filters. Returns COMPACT rows (id, category, tags, triangles, real size in blocks, animation capability) so you can choose without downloading anything. All measurements come from the target engine's own OBJ parser.",
+  {
+    query: z.string().optional().describe("Free text, e.g. 'wooden chair', 'castle wall', 'dragon', 'street lamp'"),
+    category: z.string().optional().describe("buildings | furniture | characters | nature-creatures | vehicles-games | props-environments"),
+    tag: z.array(z.string()).optional().describe("All of these tags must match (AND). Use omni_3d_search with listTags to see the vocabulary."),
+    source: z.string().optional().describe("kenney | kaykit"),
+    pack: z.string().optional().describe("Substring of the pack name, e.g. 'castle', 'furniture-bits'"),
+    anim: z.string().optional().describe("whole-model | two-part | per-part — use per-part when you need to animate a door, wheel or limb"),
+    maxTri: z.number().int().positive().optional().describe("Maximum triangles (engine budget per model is 30000)"),
+    minTri: z.number().int().positive().optional().describe("Minimum triangles"),
+    maxSize: z.number().positive().optional().describe("Maximum horizontal footprint in BLOCKS (use to keep a model small enough for your scene)"),
+    textured: z.boolean().optional().describe("Only models with a bound PNG texture"),
+    listTags: z.boolean().optional().describe("Return the tag vocabulary with counts instead of searching"),
+    limit: z.number().int().positive().max(100).optional().describe("Max rows (default 20)"),
+  },
+  async (a) => {
+    const cat = await trap(async () => Assets3D.loadCatalog());
+    if (a.listTags) {
+      const counts = new Map<string, number>();
+      for (const m of cat.models) for (const t of m.tags) counts.set(t, (counts.get(t) ?? 0) + 1);
+      return json({
+        tags: Object.fromEntries([...counts.entries()].sort((x, y) => y[1] - x[1])),
+      });
+    }
+    const hits = Assets3D.searchCatalog(cat, {
+      query: a.query,
+      tag: a.tag,
+      category: a.category,
+      source: a.source,
+      pack: a.pack,
+      anim: a.anim,
+      maxTri: a.maxTri,
+      minTri: a.minTri,
+      maxSize: a.maxSize,
+      textured: a.textured,
+    });
+    const limit = a.limit ?? 20;
+    return json({
+      matched: hits.length,
+      showing: Math.min(hits.length, limit),
+      models: hits.slice(0, limit).map(Assets3D.project),
+      next:
+        hits.length > limit
+          ? "Narrow the filters (category/tag/maxTri/maxSize) or raise `limit` to see more."
+          : "Call omni_3d_inspect { id } for the full record before fetching.",
+    });
+  },
+);
+
+server.tool(
+  "omni_3d_inspect",
+  "Full engine-measured record for ONE model: triangles, exact bounds, real size in blocks, every material with its colour and texture, the named parts that can be animated, the SHA-256, and an honest assessment of whether it fits the engine's budget and your stated need. Use this to confirm a model is really what you want BEFORE fetching it.",
+  {
+    id: z.string().describe("Catalogue id, e.g. 'kenney/fantasy-town-kit/cart-high'. A bare name also works when it is unambiguous."),
+    need: z.string().optional().describe("What you are trying to build, e.g. 'a door I can open' or 'a small lamp'. Used to flag mismatches."),
+  },
+  async ({ id, need }) => {
+    const cat = await trap(async () => Assets3D.loadCatalog());
+    const m = Assets3D.findModel(cat, id);
+    if (!m) {
+      const cands = Assets3D.findModelCandidates(cat, id);
+      return json({
+        found: false,
+        id,
+        candidates: cands.map(Assets3D.project),
+        next: cands.length
+          ? "Several models share that name — pick the full id from `candidates`."
+          : "No such model. Use omni_3d_search to find one.",
+      });
+    }
+    const assessment = Assets3D.assess(m);
+    const warnings: string[] = [];
+    const n = (need ?? "").toLowerCase();
+    if (n) {
+      if (/\b(open|door|gate|hinge|rotate|swing|wheel|spin|limb|arm|leg|animate|animation)\b/.test(n) && m.anim === "whole-model") {
+        warnings.push(
+          "You asked for something animated, but this model has no named parts: only the WHOLE model can be moved. Search with anim='per-part' or 'two-part'.",
+        );
+      }
+      if (/\b(large|big|huge|mountain|terrain|landscape)\b/.test(n) && Math.max(m.size[0], m.size[2]) < 8) {
+        warnings.push(
+          `You asked for something large, but this model is only ${m.size[0].toFixed(1)}x${m.size[2].toFixed(1)} blocks.`,
+        );
+      }
+      if (/\b(small|tiny|lamp|candle|cup|detail|decoration)\b/.test(n) && Math.max(m.size[0], m.size[2]) > 20) {
+        warnings.push(
+          `You asked for something small, but this model is ${m.size[0].toFixed(0)}x${m.size[2].toFixed(0)} blocks — scale it down or pick another.`,
+        );
+      }
+      if (/\b(texture|realistic|colourful|colorful|painted)\b/.test(n) && !m.tex) {
+        warnings.push("You asked for a textured look, but this model has no bound texture (flat material colour only).");
+      }
+    }
+    return json({
+      found: true,
+      id: m.id,
+      name: m.name,
+      source: m.source,
+      pack: m.pack,
+      category: m.category,
+      tags: m.tags,
+      triangles: m.tri,
+      verticesNote: "triangles are post-parse, after the engine's fan triangulation",
+      bounds: { min: m.bb.slice(0, 3), max: m.bb.slice(3), sizeBlocks: m.size },
+      animation: { mode: m.anim, displayGroups: m.grp, namedParts: m.gr },
+      rendering: { hasUV: m.uv, textured: m.tex, materials: assessment.materials },
+      integrity: { sha256: m.sha, bytes: m.bytes, file: `models/${m.file}` },
+      assessment,
+      mismatchWarnings: warnings,
+      fetchWith: `omni_3d_fetch { id: "${m.id}" }`,
+    });
+  },
+);
+
+server.tool(
+  "omni_3d_fetch",
+  "Download ONLY the chosen model (OBJ + its MTL + the textures that MTL references) into a local folder, and verify it: the OBJ is hashed and compared against the SHA-256 recorded when it was measured. Also writes the OmniMod `.obj.model3d.json` profile so the result can go straight to omni_3d_upload. Nothing else from the library is downloaded.",
+  {
+    id: z.string().describe("Catalogue id from omni_3d_search / omni_3d_inspect"),
+    dest: z.string().optional().describe("Destination folder (default: <workDir>/models)"),
+    withProfile: z.boolean().optional().describe("Write the OmniMod model profile next to the OBJ (default true)"),
+  },
+  async ({ id, dest, withProfile }) => {
+    const cat = await trap(async () => Assets3D.loadCatalog());
+    const m = Assets3D.findModel(cat, id);
+    if (!m) {
+      const cands = Assets3D.findModelCandidates(cat, id);
+      return json({
+        ok: false,
+        error: "model_not_found",
+        id,
+        candidates: cands.map(Assets3D.project),
+        hint: "Use omni_3d_search to find the exact id.",
+      });
+    }
+    const root = dest && dest.trim() ? resolve(dest.trim()) : join(config.workDir, "models");
+    const r = await trap(async () => Assets3D.fetchModel(m, root, { withProfile: withProfile !== false }));
+    return json({
+      ok: true,
+      ...r,
+      triangles: m.tri,
+      sizeBlocks: m.size,
+      next: [
+        `omni_3d_upload { dir: "${r.dir}" } to push it into the running game,`,
+        "or load the .obj with any standard importer.",
+      ].join(" "),
+    });
+  },
+);
+
+server.tool(
+  "omni_3d_models",
+  "What the RUNNING game currently has: the 3D model assets registered in the active world (uploaded + contributed by installed mods) and every model instance already placed in the world, with its position, rotation, scale and creator. Call this before uploading to avoid duplicates, and after placing to confirm.",
+  {},
+  async () => {
+    const r = await trap(async () => bridge.get("/omni/model3d/list"));
+    return json(r);
+  },
+);
+
+server.tool(
+  "omni_3d_upload",
+  "Upload a 3D model into the running world so it becomes placeable. Give either a library `id` (the file is fetched and verified first) or a local `dir` produced by omni_3d_fetch. Handles the bridge's context-first gate automatically. The engine caps an OBJ at 8 MB of text.",
+  {
+    id: z.string().optional().describe("Library model id, e.g. 'kenney/furniture-kit/chair'"),
+    dir: z.string().optional().describe("Folder containing <name>.obj (+ .mtl) — alternative to id"),
+    name: z.string().optional().describe("Override the registered model name (safe characters only: letters, digits, -, _)"),
+    world: z.string().optional().describe("Target world folder; defaults to the active world"),
+    collision: z.string().optional().describe("auto | full | boxes | none (default auto)"),
+    scale: z.number().positive().optional().describe("Model scale; 1.0 means 1 OBJ unit == 1 block"),
+  },
+  async (a) => {
+    if (!a.id && !a.dir) {
+      return json({ ok: false, error: "missing_target", hint: "Pass either `id` (library model) or `dir` (local folder)." });
+    }
+    let objPath = "";
+    let mtlPath: string | null = null;
+    let name = a.name ?? "";
+
+    if (a.id) {
+      const cat = await trap(async () => Assets3D.loadCatalog());
+      const m = Assets3D.findModel(cat, a.id);
+      if (!m) {
+        return json({ ok: false, error: "model_not_found", id: a.id, hint: "Use omni_3d_search first." });
+      }
+      const root = join(config.workDir, "models");
+      const fetched = await trap(async () => Assets3D.fetchModel(m, root));
+      objPath = join(fetched.dir, `${m.name}.obj`);
+      const mtlCandidate = join(fetched.dir, `${m.name}.mtl`);
+      mtlPath = fetched.files.includes(`${m.name}.mtl`) ? mtlCandidate : null;
+      if (!name) name = m.name;
+    } else {
+      const d = resolve((a.dir as string).trim());
+      const objs = (await readdirSafe(d)).filter((f) => f.toLowerCase().endsWith(".obj"));
+      if (objs.length === 0) {
+        return json({ ok: false, error: "no_obj_in_dir", dir: d, hint: "The folder must contain exactly one .obj (or pass `name`)." });
+      }
+      const pick = objs.length === 1 ? objs[0] : objs.find((f) => f.toLowerCase() === `${name.toLowerCase()}.obj`) ?? objs[0];
+      objPath = join(d, pick);
+      const mtlCandidate = objPath.replace(/\.obj$/i, ".mtl");
+      mtlPath = (await fileExists(mtlCandidate)) ? mtlCandidate : null;
+      if (!name) name = pick.replace(/\.obj$/i, "");
+    }
+
+    const safe = name.replace(/[^A-Za-z0-9_-]/g, "");
+    if (!safe) {
+      return json({ ok: false, error: "bad_name", hint: "Name must contain letters, digits, '-' or '_'." });
+    }
+    const objText = await readFile(objPath, "utf8");
+    if (Buffer.byteLength(objText, "utf8") > 8 * 1024 * 1024) {
+      return json({
+        ok: false,
+        error: "too_large",
+        bytes: Buffer.byteLength(objText, "utf8"),
+        hint: "The engine caps an uploaded OBJ at 8 MB of text. Decimate the mesh or split it.",
+      });
+    }
+    const mtlText = mtlPath ? await readFile(mtlPath, "utf8") : undefined;
+
+    const body: Record<string, unknown> = { name: safe, obj: objText };
+    if (mtlText) body.mtl = mtlText;
+    if (a.world) body.world = a.world;
+    const profile: Record<string, unknown> = {};
+    if (a.collision) profile.collision = a.collision;
+    if (a.scale) profile.scale = a.scale;
+    if (Object.keys(profile).length) body.profile = profile;
+
+    const send = () => bridge.post("/omni/model3d/upload", body, 60000);
+    let res: unknown;
+    try {
+      res = await send();
+    } catch (e) {
+      const code = e instanceof BridgeError ? e.code : "";
+      if (code === "context_required" || code === "context_fingerprint_mismatch") {
+        const fp = await bridge.ackContext();
+        if (!fp) throw e;
+        res = await send();
+      } else {
+        throw e;
+      }
+    }
+    return json({ ok: true, name: safe, objBytes: Buffer.byteLength(objText, "utf8"), hadMtl: !!mtlText, result: res });
+  },
+);
+
+server.tool(
+  "omni_3d_place",
+  "Place a registered 3D model instance in the world at a base-centre anchor (y is where the model's floor sits). Collision is voxelized from the real mesh, so the player walks on the true surfaces. Then animate it with omni_3d_animate or reconfigure it with omni_3d_configure.",
+  {
+    model: z.string().describe("Registered model id, e.g. 'omni3d:chair' or '<modns>:<name>' — see omni_3d_models"),
+    x: z.number(), y: z.number(), z: z.number(),
+    rotY: z.number().optional().describe("Rotation in degrees, clockwise"),
+    scale: z.number().positive().optional().describe("Scale; 1.0 = the catalogue's sizeBlocks"),
+    interaction: z.string().optional().describe("JSON array of actions to run on right-click"),
+    attack: z.string().optional().describe("JSON array of actions to run on left-click"),
+  },
+  async (a) => {
+    const body: Record<string, unknown> = { model: a.model, x: a.x, y: a.y, z: a.z };
+    if (a.rotY !== undefined) body.rotY = a.rotY;
+    if (a.scale !== undefined) body.scale = a.scale;
+    if (a.interaction) body.interaction = a.interaction;
+    if (a.attack) body.attack = a.attack;
+    const res = await trap(async () => bridge.post("/omni/model3d/place", body, 60000));
+    return json(res);
+  },
+);
+
+server.tool(
+  "omni_3d_animate",
+  "Play a keyframe animation clip on a placed model (e.g. open a door). The clip must exist in the model's profile — omni_3d_inspect shows the named parts, and omni_3d_configure can set new clips. The server broadcasts ONE state and every client runs the timeline locally, so this costs nothing per frame.",
+  {
+    target: z.string().describe("'nearest', 'id=<entityId>', or 'all'"),
+    clip: z.string().describe("Clip name defined in the model profile"),
+    mode: z.string().optional().describe("once | loop | toggle | reverse | stop"),
+  },
+  async ({ target, clip, mode }) => {
+    const res = await trap(async () =>
+      bridge.post("/omni/model3d/animate", { target, clip, mode: mode ?? "once" }, 60000),
+    );
+    return json(res);
   },
 );
 

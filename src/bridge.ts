@@ -58,6 +58,14 @@ const ERROR_HINTS: Record<string, string> = {
   bad_json: "The body was not valid JSON, or the batch content was not valid JSON.",
   command_failed:
     "The command was rejected by the engine's command manager. Remember this is a 1.8.8-era command surface — check the syntax with omni_knowledge('commands').",
+  scope_violation:
+    "This credential comes from a map folder, so it is scoped to ONE map: you have full control inside it, but creating or entering another map is refused on purpose. Use the master token / permanent code for whole-game actions, or omni_map_connect on the other map's folder.",
+  world_mismatch:
+    "A restart can only reload the map that is currently running. Omit 'name' to restart the active world, or quit then enter the other map explicitly.",
+  context_required:
+    "The bridge's context-first gate is armed: a mutating call was refused until you acknowledge the map's context pack. Read GET /omni/context (mode=link is enough when you only need the credential and the fingerprint), then POST /omni/context/ack with the exact fingerprint you received. omni_map_onboard does this for you; omni_3d_upload retries automatically.",
+  context_fingerprint_mismatch:
+    "The fingerprint you acked is not the one the bridge currently serves — the pack changed between your read and your ack. Re-read GET /omni/context and ack the new fingerprint.",
 };
 
 function headers(preAuth: boolean): Record<string, string> {
@@ -151,4 +159,29 @@ export const bridge = {
   /** Pre-auth calls: GET /omni/ping and POST /omni/pair only. */
   getPreAuth: (path: string) => request("GET", path, { preAuth: true }),
   postPreAuth: (path: string, body?: unknown) => request("POST", path, { body, preAuth: true }),
+
+  /**
+   * Satisfy the bridge's context-first gate.
+   *
+   * The gate refuses state-changing calls with HTTP 428 / `context_required`
+   * until the caller quotes the fingerprint of the pack it just read, which is
+   * what makes a blind ack impossible. Tools that mutate state can call this and
+   * retry once instead of bouncing the failure back to the agent.
+   *
+   * Returns the acknowledged fingerprint, or null when the bridge did not
+   * publish one (older builds) — in that case the caller should surface the
+   * original error rather than pretend it acked.
+   */
+  ackContext: async (): Promise<string | null> => {
+    const ctx = (await request("GET", "/omni/context", {
+      query: { mode: "link" },
+    })) as Record<string, unknown>;
+    const fp =
+      (ctx.fingerprint as string | undefined) ??
+      (ctx.packFingerprint as string | undefined) ??
+      null;
+    if (!fp) return null;
+    await request("POST", "/omni/context/ack", { body: { fingerprint: fp } });
+    return fp;
+  },
 };

@@ -12,6 +12,24 @@ The folder bridge is how you *build*. The HTTP bridge is how you *verify*. If yo
 have the folder bridge, you can still verify via `command` ops plus the log ring, but it
 is slower — say so to the user and suggest enabling Agent Link.
 
+## 0. Shortcut: you are probably already authenticated
+
+If you can read this folder, you can read `state/agentlink.json`,
+which the game keeps updated with `{mapName, port, token, scope:"map"}`. Presenting that
+token gives FULL control of **this map** from any IP - no pairing window, no 8-char code,
+no expiry, and it keeps working across restarts. It is refused only while the player has
+**Map Folder Agent Access** switched off in the game options.
+
+```
+TOKEN=$(python -c "import json;print(json.load(open('_dev/state/agentlink.json'))['token'])")
+curl -H "Authorization: Bearer $TOKEN" http://<device-ip>:26911/omni/state
+# or, with the MCP server:  omni_map_connect {"map":"__OMNIMOD_MAP__"}
+```
+
+Scope rule: `/omni/world/create` and `/omni/world/enter <other map>` answer
+`scope_violation`. Everything inside this map is allowed, including
+`POST /omni/world/restart` - see `agent/11_AGENT_CONTROL_AND_RESTART.md`.
+
 ## 1. Turning on the live bridge
 
 The user does this in game: **Options -> Agent Link** (enable), then
@@ -65,14 +83,76 @@ routing failures use real status codes. Always inspect `ok`, never just the stat
 | POST | `/omni/chat` | `{message}` — blue `[Agent]` broadcast |
 | POST | `/omni/devpatch/verify` | `{files:[{path,sha256}]}` — is the device running your source? |
 | GET | `/omni/logs` | log ring: `since`, `limit`, `level`, `source`, `q` |
+| GET | `/omni/modstats` | per-mod log stats from the Mod Logs panel buffers (total/info/warn/error per mod): `world?` |
+| GET | `/omni/modlogs` | ONE mod's complete panel trail (every level — exactly what the in-game Mod Logs panel shows): `mod`, `world?`, `limit?`, `level?` |
 | GET | `/omni/errors` | `WARN`/`ERROR`/`FATAL` only |
 | GET | `/omni/notifications` | grouped issue feed per source |
 | POST | `/omni/agentlog` | `{message, level?}` — your own marker in the log stream |
+| GET | `/omni/model3d/list` | [OMNI3D] registered 3D model assets + the models placed in this world (id, pos, scale, creator) |
+| POST | `/omni/model3d/upload` | [OMNI3D] `{world?, name, obj\|objB64, mtl?\|mtlB64?, profile?}` — stage a 3D model (OBJ ≤ 8MB). Contract: `agent/12_OMNI_3D_MODELS.md` |
+| POST | `/omni/model3d/place` | [OMNI3D] `{model, x,y,z\|pos:[x,y,z], rotY?, scale?, interaction?, attack?}` — place at a world anchor (base center) |
+| POST | `/omni/model3d/configure` | [OMNI3D] `{target:nearest\|id=N, interaction?, attack?, scale?, rotY?, pos?, collision?}` |
+| POST | `/omni/model3d/animate` | [OMNI3D] `{target, clip, mode?:once\|loop\|toggle\|reverse\|stop}` |
+| POST | `/omni/model3d/remove` | [OMNI3D] `{target:nearest\|id=N\|all\|radius=N}` |
+| GET | `/omni/model3d/profile` | [OMNI3D] `?model=<id>` — the model's full profile JSON (structure, collision, animations, interactions) |
+| GET | `/omni/link` | the reachability ladder + its live health: public tunnel / LAN / adb, which one works from where you are, and why |
+| POST | `/omni/link/public-url` | `{url, source?, verified?, verifiedAtMs?, ttlMs?}` — publish the public tunnel base (send `{"url":""}` to withdraw it) |
+| GET | `/omni/connection` | the whole connection bundle for this map (token + reachability + guidance pack), rebuilt from live state on every call |
+| POST | `/omni/link/rotate-token` | `{}` — mint a new credential for this map; the old one dies immediately (leak response) |
 
 `/omni/mapdev/write` is the only endpoint that writes a file into a world folder, and it
 only writes into `_dev/build/` with a validated plain filename. The living
 documents in this folder are maintained by you through direct file access, not through the
 HTTP bridge.
+
+## 2.1 Reaching this bridge from anywhere — the public tunnel
+
+A `192.168.*`, `10.*` or `172.16-31.*` address is a LAN address. **A LAN address is not
+reachable from a cloud sandbox or from another network — that is a network fact, not a
+dead token and not a wrong token.** A timeout there means you are knocking on a door that
+physically is not on your street; retrying it in a loop proves nothing.
+
+So read the ladder first and pick the rung that works FROM WHERE YOU ARE:
+
+```
+GET /omni/link            # the ladder + live health of every rung
+GET /omni/connection      # the same thing as a hand-off file, rebuilt live
+```
+
+| rung | works from | how it is created |
+|---|---|---|
+| `public` | anywhere on the internet | a tunnel the operator's companion runs for you |
+| `adb` | a computer with the device attached | `adb forward tcp:26911 tcp:26911`, then `http://127.0.0.1:26911` |
+| `lan` | the device's own Wi-Fi only | nothing to set up |
+
+Rules that stop you wasting an hour:
+
+1. **If you are off-LAN, read `cloudApiBase` first.** It is either a proven public address
+   or the empty string — it is NEVER a LAN address, because handing a cloud sandbox a LAN
+   address is what produced every "the connection data is dead" report. Empty means no
+   proven tunnel exists right now.
+2. If `reachability.public.base` is non-empty **and** `public.live` is true, use
+   `<public.base>/omni` as your apiBase and stop thinking about addresses. Non-empty alone
+   is NOT enough: a published-but-not-live address is one nobody has reached, and calling
+   it is how agents land on `503 no tunnel here`.
+3. If `public.base` is empty (or `live` is false and `staleReason` says it went stale), no
+   tunnel is running: say so plainly, do not retry the LAN address in a loop, and keep
+   working from the documents you already have. Tell the operator to bring the tunnel up.
+4. `live` is only true while the tunnel has been VERIFIED through itself recently (the TTL
+   in `ttlMs`). A dead tunnel therefore reports `live:false` instead of advertising a
+   corpse — trust the flag, it is measured, not assumed.
+5. Bypass any HTTP proxy for these calls (`curl --noproxy '*'`, `NO_PROXY=<host>`). A proxy
+   turns a LAN call into a timeout that looks exactly like an expired credential.
+
+[LINK-TRUTH] Who proves the address. The GAME does, not an external companion: while a
+public URL is published the bridge calls `<public.base>/omni/ping` **through the tunnel**
+on a timer and demands its own `bridgeId` back, and every request that arrives carrying
+that host refreshes the same proof for free. So `public.live` is measured by this process
+end-to-end: an answer from a different server, a `503` from a tunnel that has closed, or
+silence all leave the URL unproven. A URL nobody can prove is reported stale and is never
+handed to an off-LAN agent, and the moment it answers again it becomes live by itself —
+no republishing, no restart. The URL is also persisted, so restarting the game does not
+erase the fixed address: it comes back unproven and is re-proved within seconds.
 
 ## 3. The MCP tool surface (when the user has connected the MCP server)
 
@@ -133,4 +213,4 @@ code. Use `/omni/devpatch/verify` to compare your local file hashes against what
 running device was built from — `mismatches` means the device is NOT running your edit and
 any test result you collect is about the old code.
 
-<!-- omnimod-docs-version: omnimod-agent-docs-4 -->
+<!-- omnimod-docs-version: omnimod-agent-docs-9 -->

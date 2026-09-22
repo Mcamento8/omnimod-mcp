@@ -258,6 +258,13 @@ export const ENDPOINT_CATALOG: ReadonlyArray<{
   { method: "GET",  path: "/omni/errors",              auth: "token", desc: "WARN+ only, same filters except level." },
   { method: "GET",  path: "/omni/notifications",       auth: "token", desc: "Grouped WARN/ERROR/FATAL by source with count + sample." },
   { method: "POST", path: "/omni/agentlog",            auth: "token", desc: "Write your own annotation into the log ring (use this to mark phases)." },
+  { method: "GET",  path: "/omni/model3d/list",        auth: "token", desc: "OMNI3D: 3D model assets registered in the world (uploaded + from mods) AND every instance already placed, with pos/rotation/scale/creator. Call before uploading to avoid duplicates." },
+  { method: "POST", path: "/omni/model3d/upload",      auth: "token", desc: "OMNI3D: stage a Wavefront OBJ into the world store and register it. {world?, name, obj|objB64, mtl?|mtlB64?, profile?}. OBJ text <= 8MB, safe base names only, 1 OBJ unit == 1 block. Prefer omni_3d_upload, which finds the model in the CC0 library and verifies its hash first." },
+  { method: "POST", path: "/omni/model3d/place",       auth: "token", desc: "OMNI3D: place an instance at a BASE-CENTRE anchor. {model, x,y,z, rotY?, scale?, interaction?, attack?}. Collision is voxelized from the real mesh." },
+  { method: "POST", path: "/omni/model3d/configure",   auth: "token", desc: "OMNI3D: reconfigure a placed instance. {target:nearest|id=N, interaction?, attack?, scale?, rotY?, pos?, collision?:auto|full|boxes|none}." },
+  { method: "POST", path: "/omni/model3d/animate",     auth: "token", desc: "OMNI3D: play a keyframe clip on a placed model. {target, clip, mode?:once|loop|toggle|reverse|stop}. Needs a model with named o/g parts (catalogue 'anim' = two-part|per-part)." },
+  { method: "POST", path: "/omni/model3d/remove",      auth: "token", desc: "OMNI3D: remove placed instance(s). {target:nearest|id=N|all|radius=N}." },
+  { method: "GET",  path: "/omni/model3d/profile",     auth: "token", desc: "OMNI3D: ?model=<id> — the model's full profile JSON (structure, collision spec, animation clips, default interactions) plus mesh statistics." },
 ];
 
 /**
@@ -266,7 +273,11 @@ export const ENDPOINT_CATALOG: ReadonlyArray<{
  * engine accepts Forge 1.20.1 mods and how the command-block surface works.
  * URLs come from config (env OMNIMOD_FORGE_COMPAT_REPO / OMNIMOD_COMMAND_BLOCKS_REPO).
  */
-export function sourceRepos(forgeCompatRepoUrl: string | null, commandBlocksRepoUrl: string | null): ReadonlyArray<{
+export function sourceRepos(
+  forgeCompatRepoUrl: string | null,
+  commandBlocksRepoUrl: string | null,
+  assetLibraryRepoUrl: string | null = null,
+): ReadonlyArray<{
   system: string;
   url: string;
   status: "linked" | "not-set";
@@ -287,6 +298,14 @@ export function sourceRepos(forgeCompatRepoUrl: string | null, commandBlocksRepo
       status: commandBlocksRepoUrl ? "linked" : "not-set",
       env: "OMNIMOD_COMMAND_BLOCKS_REPO",
       contains: "The Brigadier 1.20.1 shim (dispatcher, argument types, suggestions), the 1.20.1 commands API shims, every 1.8 command implementation, the MCBP parity commands (bossbar/team/tag/title/function/schedule/execute/data/attribute/damage/ride/stopsound/experience/modern setblock-fill-clone), the command-block modes runtime, CommandBlockLogic + BlockCommandBlock + tile entity, and the dual-mode DEV/PLAY gates (MapModeRuntime). Read this to master command-block map design.",
+    },
+    {
+      system: "CC0 3D model library (OBJ)",
+      url: assetLibraryRepoUrl ?? "(unlinked — omni_3d_* tools disabled)",
+      status: assetLibraryRepoUrl ? "linked" : "not-set",
+      env: "OMNIMOD_ASSET_LIBRARY_REPO",
+      contains:
+        "5,952 public-domain (CC0 1.0) models in Wavefront OBJ with their MTL and PNG textures: creatures, buildings, furniture, props, vehicles, nature, characters. catalog/index.min.json is the whole catalogue in one file — per model it records the ENGINE-measured triangle count, real size in blocks, exact bounds, animation capability (named o/g parts), material colours and texture paths, and the SHA-256 of the OBJ. Use omni_3d_search to find, omni_3d_inspect to judge, omni_3d_fetch to pull ONLY what you chose (and prove its hash), omni_3d_upload to put it in the running game. Commercial use allowed, no attribution required. Prefer this over hand-authoring a mesh you could have picked from a measured, licence-clean catalogue.",
     },
   ];
 }

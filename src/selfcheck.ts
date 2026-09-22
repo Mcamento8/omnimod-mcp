@@ -22,6 +22,7 @@ import * as Shapes from "./shapes.js";
 import { scaffoldMod } from "./scaffold.js";
 import { inspectMod } from "./inspect.js";
 import * as MapDocs from "./mapdocs.js";
+import * as Assets3D from "./assets3d.js";
 import { rm, mkdir, stat, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -164,6 +165,118 @@ async function main(): Promise<void> {
   process.stderr.write(`  inspect: modId=${ins.metadata.modId} models=${ins.counts.models} recipes=${ins.counts.recipes} problems=${ins.problems.length}\n`);
 
   // ------------------------------------------------------------------
+  // 3D asset library (pure parts — no network required)
+  // ------------------------------------------------------------------
+  // The library tools promise an agent two things it cannot get anywhere else:
+  // a search that answers from measurements, and a fetch it can PROVE is the
+  // file that was measured. Both are testable without touching the network.
+  const synth: Assets3D.LibCatalog = {
+    schema: 2,
+    hashAlgo: Assets3D.EXPECTED_HASH_ALGO,
+    count: 4,
+    models: [
+      {
+        id: "kenney/furniture-kit/chair", name: "chair", source: "kenney", pack: "furniture-kit",
+        category: "furniture", tags: ["furniture"], tri: 128, grp: 1, anim: "whole-model",
+        uv: true, tex: true, size: [0.5, 0.9, 0.5], bb: [-0.25, 0, -0.25, 0.25, 0.9, 0.25],
+        mat: [{ n: "wood", c: "#e59a64" }], gr: ["chair"], sha: "a".repeat(64),
+        file: "kenney/furniture-kit/chair.obj", bytes: 4210,
+      },
+      {
+        id: "kenney/building-kit/door-rotate-square-d", name: "door-rotate-square-d", source: "kenney",
+        pack: "building-kit", category: "buildings", tags: ["building", "door"], tri: 264, grp: 3,
+        anim: "per-part", uv: true, tex: true, size: [0.2, 2.1, 0.9],
+        bb: [-0.1, 0, -0.45, 0.1, 2.1, 0.45], mat: [{ n: "colormap", c: "#ffffff", t: "Textures/colormap.png" }],
+        gr: ["frame", "leaf"], sha: "b".repeat(64), file: "kenney/building-kit/door-rotate-square-d.obj", bytes: 9000,
+      },
+      {
+        id: "kenney/castle-kit/wall", name: "wall", source: "kenney", pack: "castle-kit",
+        category: "buildings", tags: ["building", "wall", "medieval"], tri: 88, grp: 1,
+        anim: "whole-model", uv: true, tex: true, size: [1, 1.31, 1],
+        bb: [-0.5, 0, -0.5, 0.5, 1.31, 0.5], mat: [{ n: "colormap", c: "#ffffff", t: "Textures/colormap.png" }],
+        gr: ["wall"], sha: "c".repeat(64), file: "kenney/castle-kit/wall.obj", bytes: 12063,
+      },
+      {
+        id: "kaykit/prototype-bits-1.1/flat_decal", name: "flat_decal", source: "kaykit",
+        pack: "prototype-bits-1.1", category: "props-environments", tags: ["decor"], tri: 4, grp: 1,
+        anim: "whole-model", uv: false, tex: false, size: [4, 0.01, 4],
+        bb: [-2, 0, -2, 2, 0.01, 2], mat: [{ n: "d", c: "#cccccc" }], gr: [],
+        sha: "d".repeat(64), file: "kaykit/prototype-bits-1.1/flat_decal.obj", bytes: 300,
+      },
+    ],
+  };
+
+  // Ranking: an identity hit must outrank a mere tag/category hit.
+  const ranked = Assets3D.searchCatalog(synth, { query: "chair" });
+  assert(ranked.length > 0 && ranked[0].id === "kenney/furniture-kit/chair",
+    `search ranking wrong: got ${ranked.map((m) => m.id).join(", ")}`);
+
+  // Structured filters.
+  assert(Assets3D.searchCatalog(synth, { category: "buildings" }).length === 2, "category filter wrong");
+  assert(Assets3D.searchCatalog(synth, { tag: ["door"] }).length === 1, "tag filter wrong");
+  assert(Assets3D.searchCatalog(synth, { anim: "per-part" }).length === 1, "anim filter wrong");
+  assert(Assets3D.searchCatalog(synth, { maxTri: 100 }).length === 2, "maxTri filter wrong");
+  assert(Assets3D.searchCatalog(synth, { textured: true }).length === 3, "textured filter wrong");
+  assert(Assets3D.searchCatalog(synth, { maxSize: 1 }).length === 3, "maxSize filter wrong");
+
+  // Id resolution: exact, unambiguous short form, and ambiguous short form.
+  assert(Assets3D.findModel(synth, "kenney/castle-kit/wall")?.id === "kenney/castle-kit/wall", "exact id lookup failed");
+  assert(Assets3D.findModel(synth, "chair")?.id === "kenney/furniture-kit/chair", "short id lookup failed");
+  assert(Assets3D.findModel(synth, "wall")?.id === "kenney/castle-kit/wall", "unique name lookup failed");
+  assert(Assets3D.findModel(synth, "nope") === null, "a missing id must return null, not a guess");
+
+  // Assessment: the flat decal must be called out, and the door must expose its parts.
+  const aDoor = Assets3D.assess(synth.models[1]);
+  assert(aDoor.animationMode === "per-part" && aDoor.namedParts.length === 2,
+    `door assessment wrong: ${JSON.stringify(aDoor.namedParts)}`);
+  const aFlat = Assets3D.assess(synth.models[3]);
+  assert(aFlat.notes.some((n) => /decal\/ground tile/.test(n)), "a flat model must be flagged as a decal");
+  assert(aFlat.notes.some((n) => /no texture coordinates/.test(n)), "a UV-less model must be flagged");
+  const aChair = Assets3D.assess(synth.models[0]);
+  assert(aChair.withinBudget && aChair.notes.some((n) => /no named parts/.test(n)),
+    "a single-part model must say so");
+
+  // The hash contract: line endings must not change the identity of a mesh,
+  // because the recorder (AnalyzeModels.java) and a git checkout disagree on them.
+  const lf = Buffer.from("v 0 0 0\nv 1 0 0\nf 1 2 3\n", "utf8");
+  const crlf = Buffer.from("v 0 0 0\r\nv 1 0 0\r\nf 1 2 3\r\n", "utf8");
+  assert(Assets3D.hashModelContent(lf) === Assets3D.hashModelContent(crlf),
+    "the model hash must be line-ending independent");
+  assert(Assets3D.hashModelContent(lf) !== Assets3D.hashModelContent(Buffer.from("v 0 0 0\nv 1 0 0\n", "utf8")),
+    "a different mesh must hash differently");
+  assert(Assets3D.hashModelContent(lf) === Assets3D.hashModelContent(Buffer.from(lf)),
+    "the hash must be deterministic across calls");
+  assert(Assets3D.hashModelContent(lf).length === 64, "the hash must be a 64-hex-character SHA-256");
+
+  // Cache staleness: a catalogue that does not declare the hash convention, or
+  // that predates the enriched fields, must be rejected rather than used.
+  assert(Assets3D.catalogIsUsable(synth), "a well-formed catalogue must be accepted");
+  assert(!Assets3D.catalogIsUsable({ count: 1, models: synth.models }), "a catalogue without hashAlgo must be rejected");
+  assert(!Assets3D.catalogIsUsable({ ...synth, models: [{ id: "x" }] }), "an unenriched catalogue must be rejected");
+  assert(!Assets3D.catalogIsUsable(null), "null must be rejected");
+  process.stderr.write(
+    `  assets3d: search/filters/id-resolution/assessment/hash/cache-staleness pass (${synth.count} synthetic models)\n`,
+  );
+
+  // Optional live round trip: exercises the real library over HTTPS and proves
+  // the recorded hash matches the published bytes. Off by default so the
+  // battery stays hermetic; set OMNIMOD_SELFCHECK_LIVE_ASSETS=1 to include it.
+  if (/^(1|true|yes|on)$/i.test(process.env.OMNIMOD_SELFCHECK_LIVE_ASSETS ?? "")) {
+    const live = await Assets3D.loadCatalog({ refresh: true });
+    assert(live.count > 1000, `live catalogue suspiciously small: ${live.count}`);
+    const target = Assets3D.findModel(live, "kenney/castle-kit/wall");
+    assert(target !== null, "live catalogue is missing kenney/castle-kit/wall");
+    const liveOut = join(tmp, "live-assets");
+    const got = await Assets3D.fetchModel(target!, liveOut);
+    assert(got.verified, `live fetch failed verification: got ${got.sha256}, want ${got.expectedSha256}`);
+    process.stderr.write(
+      `  assets3d LIVE: ${live.count} models, fetched ${got.id} and verified its SHA-256\n`,
+    );
+  } else {
+    process.stderr.write("  assets3d LIVE: skipped (set OMNIMOD_SELFCHECK_LIVE_ASSETS=1 to enable)\n");
+  }
+
+  // ------------------------------------------------------------------
   // Per-map agent context pack (mapdocs.ts + the exported engine pack)
   // ------------------------------------------------------------------
   const pack = await MapDocs.loadPackSource();
@@ -197,6 +310,49 @@ async function main(): Promise<void> {
       (f) => f.rel.includes("05_AGENT_LINK_API") && f.text.includes("/omni/mapdev/mode"),
     ),
     "POST /omni/mapdev/mode endpoint missing from the pack — re-export MapDevWorkspaceDocs",
+  );
+  // [OMNI3D 2026-09-22] the world-model contract is part of the pack contract:
+  // map-building agents must be able to learn the doctrine (3D-first BUT the
+  // user's request is the specification), the /omni3d command family, and the
+  // weak-device performance budget.
+  assert(
+    pack.static.some(
+      (f) =>
+        f.rel.includes("12_OMNI_3D_MODELS") &&
+        f.text.includes("THE DOCTRINE") &&
+        f.text.includes("/omni3d place") &&
+        f.text.includes("must STAND"),
+    ),
+    "OMNI3D world-model contract missing from the pack — re-export MapDevWorkspaceDocs",
+  );
+  assert(
+    pack.static.some(
+      (f) => f.rel.includes("05_AGENT_LINK_API") && f.text.includes("/omni/model3d/upload"),
+    ),
+    "OMNI3D /omni/model3d endpoints missing from the pack — re-export MapDevWorkspaceDocs",
+  );
+  // [ASSET-LIBRARY 2026-09-22] the CC0 model library is part of the pack
+  // contract: a map agent must be able to learn that the library exists, that it
+  // is CC0, and that the four omni_3d_* tools are the supported way to find,
+  // VERIFY and fetch a model — otherwise it will hand-author meshes it could
+  // have picked from a measured, licence-clean catalogue.
+  assert(
+    pack.static.some(
+      (f) =>
+        f.rel.includes("12_OMNI_3D_MODELS") &&
+        f.text.includes("CC0 model library") &&
+        f.text.includes("omni_3d_search") &&
+        f.text.includes("omni_3d_fetch") &&
+        f.text.includes("omni_3d_inspect") &&
+        f.text.includes("SHA-256"),
+    ),
+    "the CC0 model-library contract is missing from the pack — re-export MapDevWorkspaceDocs",
+  );
+  assert(
+    pack.static.some(
+      (f) => f.rel.includes("12_OMNI_3D_MODELS") && f.text.includes("verified: false"),
+    ),
+    "the pack must tell the agent what a failed library verification means",
   );
   process.stderr.write(
     `  pack: ${pack.version}, ${pack.static.length} static + ${pack.living.length} living\n`,

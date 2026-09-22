@@ -2,7 +2,7 @@
 /**
  * OmniMod MCP — FULL offline test battery.
  *
- * Drives EVERY tool (51), EVERY resource (13) and EVERY prompt (5) over a
+ * Drives EVERY tool, EVERY resource (13) and EVERY prompt (5) over a
  * real JSON-RPC stdio session, plus the terminal commands
  * (setup / doctor / --help / --version).
  *
@@ -138,8 +138,10 @@ async function main() {
 
   const tools = await send("tools/list", {});
   const names = new Set((tools.tools || []).map((t) => t.name));
-  if (tools.tools?.length === 51) ok("tools/list count = 51");
-  else fail("tools/list count", `got ${tools.tools?.length}`);
+  // A FLOOR, not an exact count: an exact match breaks every time a tool is
+  // added, which trains people to "fix" the number instead of testing anything.
+  if ((tools.tools?.length ?? 0) >= 61) ok(`tools/list count = ${tools.tools.length} (>= 61)`);
+  else fail("tools/list count", `got ${tools.tools?.length}, expected at least 61`);
 
   // ---- connection & config (static parts) ----
   await expectTool("omni_config", {}, /bridge: http/, "omni_config show");

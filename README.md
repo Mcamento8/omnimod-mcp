@@ -1,7 +1,7 @@
 # OmniMod MCP — Professional Map & Mod Authoring for Any AI Agent
 
 ![Version](https://img.shields.io/badge/version-1.3.0-blue)
-![Tools](https://img.shields.io/badge/tools-51-green)
+![Tools](https://img.shields.io/badge/tools-53-green)
 ![Resources](https://img.shields.io/badge/resources-13-purple)
 ![Node](https://img.shields.io/badge/node-%3E%3D18-orange)
 ![License](https://img.shields.io/badge/license-MIT-lightgrey)
@@ -93,7 +93,7 @@ cd mcp
 npm install
 npm run build
 npm run selfcheck   # runs the in-process test battery (registry, ops, shapes, scaffold, inspect, mapdocs)
-npm run e2e        # end-to-end JSON-RPC test (51 tools, 13 resources, 5 prompts)
+npm run e2e        # end-to-end JSON-RPC test (61 tools, 13 resources, 5 prompts)
 ```
 
 The server speaks MCP over stdio. Point your client at `node dist/index.js`.
@@ -199,13 +199,17 @@ Kilo Code is the original OmniMod project harness. Add the same shape to
 
 ## First agent call
 
-Once the server is connected, the agent has 51 tools (plus the full map-dev master guide: `omni_map_guide` / resource `omnimod://knowledge/map-dev-guide`). A typical first
+Once the server is connected, the agent has 61 tools (plus the full map-dev master guide: `omni_map_guide` / resource `omnimod://knowledge/map-dev-guide`). A typical first
 session:
 
 ```
-1. omni_ping                          -> confirm the bridge is up (pre-auth)
-2. omni_pair {code: "ACDM3491"}       -> user reads the 8-char code off the device
-3. omni_state                         -> confirm a world is loaded (or quit+create)
+1. omni_map_connect {map: "my_map"}   -> ONE CALL: reads _dev/state/agentlink.json out of the
+                                          map folder and sets host/port/token by itself
+                                          (skip 1-2 below; no pairing code needed)
+2. omni_ping                          -> confirm the bridge is up (pre-auth)
+3. omni_pair {code: "ACDM3491"}       -> ONLY if you have no folder access: user reads the
+                                          8-char code off the device
+4. omni_state                         -> confirm a world is loaded (or quit+create)
 4. omni_knowledge {topic: "rules"}    -> read the non-negotiables
 5. omni_map_docs {map: "my_map"}      -> fetch the per-map context pack
 6. omni_blueprint { apply: true,
@@ -220,9 +224,37 @@ session:
 8. omni_agentlog {message: "phase 1 done"}
 ```
 
+## The simple way to connect: the map folder IS the credential
+
+Every OmniMod dev map carries a game-owned file:
+
+```
+worlds/<map>/_dev/state/agentlink.json   { mapName, port, token, scope:"map", enabled, endpoints }
+```
+
+Anything that can read that folder already holds full control of that map, so the
+handshake is gone: present the token as `Authorization: Bearer <token>` (or
+`X-Agent-Token`) and you are in — from any IP, with no pairing window, no 8-character
+code, no expiry and no re-pairing after a restart. `omni_map_connect` does it in one
+call; without the MCP it is one `curl`.
+
+- **Scope:** the credential is bound to its map. `/omni/world/create` and
+  `/omni/world/enter <other map>` answer `scope_violation`; everything inside the map —
+  build, commands, walking, entities, screens, and `POST /omni/world/restart` — is allowed.
+- **Persistence:** the token lives in the map folder, so it survives world restarts, game
+  restarts and reboots. The engine re-binds the listener automatically while a dev map is
+  loaded, so the connection self-heals instead of dropping.
+- **The only off switch is the player:** *Options → Map Folder Agent Access*. Turning it
+  off answers `bad_token` to folder-based agents (batches still apply — only live control
+  stops); turning it back on restores exactly the same access.
+
 ## Tool catalog
 
 ### Connection
+- `omni_map_connect` — **[2026-09-16] the one-call connection**: read the game-owned
+  `worlds/<map>/_dev/state/agentlink.json` and point the session at that map's bridge
+  (host + port + token). Whoever can read the map folder already holds the credential,
+  so no pairing code is involved. Finishes with a live ping + state.
 - `omni_ping` — liveness probe (no auth)
 - `omni_pair` — quick-pair with an 8-char code (no auth)
 - `omni_config` — view or update host/port/token/autoTranslateBlocks
@@ -234,6 +266,9 @@ session:
 
 ### Worlds
 - `omni_worlds`, `omni_world_create`, `omni_world_enter`, `omni_world_quit`
+- `omni_world_restart` — **[2026-09-16] reload the running map** (quit → re-enter the same
+  world, wait until playable). Applies pending `_dev/` batches + re-runs the map's load
+  function; use it for staged mods, `<ns>:load` wiring and anything that needs a fresh load.
 - `omni_mapdev_status` — apply-ledger state
 
 ### Map building

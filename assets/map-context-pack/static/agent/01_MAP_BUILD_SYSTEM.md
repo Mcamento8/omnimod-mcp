@@ -244,6 +244,7 @@ void templates), which is why this folder exists.
 | `/omni_dev enable` | create the workspace if it is missing |
 | `/omni_dev linkset <uri> [root]` | link an external folder (Android SAF) |
 | `/omni_dev help` | the contract, as chat lines |
+| `/omni3d ...` | the 3D world-model command family (permission 2, command blocks OK): place / remove / list / info / models / interaction / animate / scale / rotate / move / collision / binditem / unbinditem. Full contract: `agent/12_OMNI_3D_MODELS.md`. |
 
 ## 8b. The map’s two shapes — DEV and PREVIEW (dual mode)
 
@@ -275,4 +276,4 @@ locked); light recompute near hidden blocks treats them as transparent; arrows p
 | Web, single-thread | same as desktop logically | full |
 | Web, worker mode | client-side world writes across the worker boundary are not guaranteed | partial: use `/omni_dev`, or edit while the server is stopped |
 
-<!-- omnimod-docs-version: omnimod-agent-docs-4 -->
+<!-- omnimod-docs-version: omnimod-agent-docs-9 -->

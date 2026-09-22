@@ -115,8 +115,18 @@ async function main() {
     "omni_map_onboard", "omni_map_docs", "omni_map_bootstrap", "omni_map_status",
     "omni_map_filemap", "omni_map_changelog", "omni_map_overview", "omni_map_report",
     "omni_mapdev_mode", "omni_map_guide",
+    // CC0 3D model library: search -> inspect -> fetch -> upload -> place.
+    // These must be advertised even with no bridge and no network, because an
+    // agent that cannot see them will hand-author meshes the library already has.
+    "omni_3d_library", "omni_3d_search", "omni_3d_inspect", "omni_3d_fetch",
+    "omni_3d_models", "omni_3d_upload", "omni_3d_place", "omni_3d_animate",
   ]) {
     expect(names.has(required), `missing tool: ${required}`);
+  }
+  // The library tools must describe themselves well enough to be used blind.
+  for (const t of toolsList.filter((x) => x.name.startsWith("omni_3d_"))) {
+    expect((t.description ?? "").length > 80, `${t.name} has a thin description`);
+    expect(t.inputSchema !== undefined, `${t.name} has no input schema`);
   }
   process.stderr.write(`tools/list: ${toolsList.length} tools\n`);
 

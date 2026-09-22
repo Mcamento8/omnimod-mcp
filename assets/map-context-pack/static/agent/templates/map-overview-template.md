@@ -64,4 +64,4 @@ explore"), capture that — it is what tells the next agent whether a decision f
 decisions they rejected, constraints they mentioned, things that looked wrong but are
 intentional.>
 
-<!-- omnimod-docs-version: omnimod-agent-docs-4 -->
+<!-- omnimod-docs-version: omnimod-agent-docs-9 -->

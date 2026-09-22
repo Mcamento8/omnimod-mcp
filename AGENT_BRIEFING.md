@@ -42,11 +42,11 @@ The server speaks MCP over stdio. Configure it in your client (Claude Desktop / 
 | `OMNIMOD_FORGE_COMPAT_REPO` | `https://github.com/Mcamento8/omnimod-forge-compat` (pre-linked) | Public mirror of the engine's Forge 1.20.1 compat layer (surfaced by `omni_knowledge topic='repos'`) |
 | `OMNIMOD_COMMAND_BLOCKS_REPO` | `https://github.com/Mcamento8/omnimod-command-blocks` (pre-linked) | Public mirror of the engine's command-block system (surfaced by `omni_knowledge topic='repos'`) |
 
-## What the MCP gives you (51 tools, 13 resources, 5 prompts)
+## What the MCP gives you (61 tools, 13 resources, 5 prompts)
 
-**Connection** (10): `omni_ping`, `omni_pair`, `omni_config`, `omni_state`, `omni_help`, `omni_logs`, `omni_errors`, `omni_notifications`, `omni_agentlog`, `omni_devpatch_verify`.
+**Connection** (11): `omni_map_connect`, `omni_ping`, `omni_pair`, `omni_config`, `omni_state`, `omni_help`, `omni_logs`, `omni_errors`, `omni_notifications`, `omni_agentlog`, `omni_devpatch_verify`.
 
-**Worlds & map mode** (6): `omni_worlds`, `omni_world_create`, `omni_world_enter`, `omni_world_quit`, `omni_mapdev_status`, `omni_mapdev_mode` (the dual-mode DEV⇄PLAY switch: play = every command block invisible/unopenable/unbreakable while its logic keeps running — the published-map preview shape; dev = full editing). World templates are `void_single`, `void_platform_7x7`, `flat`, `default`.
+**Worlds & map mode** (7): `omni_worlds`, `omni_world_create`, `omni_world_enter`, `omni_world_quit`, `omni_world_restart`, `omni_mapdev_status`, `omni_mapdev_mode` (the dual-mode DEV⇄PLAY switch: play = every command block invisible/unopenable/unbreakable while its logic keeps running — the published-map preview shape; dev = full editing). World templates are `void_single`, `void_platform_7x7`, `flat`, `default`.
 
 **Map building** (13): `omni_block_translate`, `omni_item_translate`, `omni_block_search`, `omni_shape_solid_box`, `omni_shape_hollow_box`, `omni_shape_cylinder`, `omni_shape_sphere`, `omni_shape_pyramid`, `omni_shape_gable_roof`, `omni_shape_hip_roof`, `omni_shape_building` (one-call house with door + windows + roof), `omni_shape_line`, `omni_blueprint` (multi-op in one call), `omni_batch_validate`, `omni_batch_apply`.
 
@@ -86,12 +86,88 @@ Modded namespaces (`mymod:custom_block`) pass through untouched. Auto-translatio
 6. **Batches apply within ~2s.** `MapDevSyncRuntime` polls every 40 ticks. Read `/omni/logs` after every meaningful batch to catch silent failures.
 7. **The build needs verification.** Engine source edits require a DevPatch (`dev_hotpatch.py`) or a rebuild. Use `omni_devpatch_verify` to check.
 
+## NEW (2026-09-22): 3D world models — OMNI3D, the strongest map-building tool
+
+The engine now holds **real 3D models** in the world: Wavefront OBJ + MTL, any shape
+and any size (a prop to a 300-block terrain), with walkable collision on the true
+surfaces, per-group keyframe animation, and fully custom interactions (right-click /
+left-click action lists: command / animation / sound / message / event / remove —
+the command action runs through the command-block path, so anything a command block
+can do works on click).
+
+**How to reach it — START WITH THE LIBRARY.** 5,952 CC0 (public-domain) models already
+exist, every one measured by this engine's own OBJ parser: creatures, buildings,
+furniture, props, vehicles, nature. Do not hand-author a mesh you could pick from a
+measured, licence-clean catalogue.
+- `omni_3d_library` — what the library contains and the full loop.
+- `omni_3d_search { query?, category?, tag?, maxTri?, maxSize?, anim?, textured? }` —
+  compact rows; `anim:"per-part"` is how you find something with a door/wheel/limb
+  that can actually be animated.
+- `omni_3d_inspect { id, need? }` — the full measured record (triangles, size in
+  blocks, materials, animatable parts, SHA-256) plus a mismatch warning against what
+  you said you need.
+- `omni_3d_fetch { id }` — downloads ONLY that model and VERIFIES its SHA-256 against
+  the catalogue; a mismatch is reported, never hidden.
+- `omni_3d_upload { id | dir }` / `omni_3d_place` / `omni_3d_animate` — into the world.
+  `omni_3d_models` lists what the running world already has.
+- `omni_command` with the `/omni3d` family (permission 2, command blocks OK):
+  place / remove / list / info / models / interaction / animate / scale / rotate /
+  move / collision / binditem / unbinditem.
+- HTTP endpoints: `GET /omni/model3d/list`, `POST /omni/model3d/upload`
+  (`{name, obj|objB64, mtl?, profile?}` — stage a model into the world store),
+  `POST /omni/model3d/place|configure|animate|remove`, `GET /omni/model3d/profile`.
+- Mods ship models as `assets/<ns>/models3d/*.obj` + `<name>.obj.model3d.json`.
+
+**THE DOCTRINE — 3D-first, but the user's request is the specification.** For large
+or complex structures (terrain, custom buildings, organic shapes) models are always
+the strongest tool: baked display lists render cheaper than thousands of blocks and
+the mesh never distorts. BUT if the user asks for a map of normal Minecraft blocks,
+build normal blocks — never inject 3D models they did not ask for. Hybrid builds
+(blocks on top of a 3D terrain surface) are first-class. The full decision table,
+the exact placement/sizing contract, the profile JSON schema, the animation and
+interaction schemas, the hybrid workflow, and the weak-device performance budget
+(triangles per model, collision resolution, renderDistance tuning) are ALL in the
+map context pack file `agent/12_OMNI_3D_MODELS.md` (v8+) — read it before any 3D
+work on a connected map. Uploads cap at 8MB OBJ; OBJ units are blocks; collision
+auto-voxelizes and greedy-merges (verified: an 8x4x8 house becomes ONE box).
+
+## Connection shortcut (2026-09-16): the map folder IS the credential
+
+Every dev map carries `worlds/<map>/_dev/state/agentlink.json`, written by the game:
+`{mapName, port, token, scope:"map", enabled, endpoints}`. If you can read the map folder
+you already hold full control of that map, so there is nothing to pair:
+
+```
+TOKEN=$(python -c "import json;print(json.load(open('worlds/<map>/_dev/state/agentlink.json'))['token'])")
+curl -H "Authorization: Bearer $TOKEN" http://<device-ip>:26911/omni/state
+# or, with the MCP:  omni_map_connect {map:"<map>"}     (sets host+port+token, then pings)
+```
+
+- Valid from any IP, no pairing window, no 8-char code, no expiry, and it keeps working
+  across world restarts and game restarts (the token lives in the map folder).
+- **Scoped to that map:** `/omni/world/create` and `/omni/world/enter <other map>` answer
+  `scope_violation`. Inside the map your control is complete — build, commands, walking,
+  entities, screen clicks, and `POST /omni/world/restart`.
+- **Only the player can end it:** *Options → Map Folder Agent Access*. Off = `bad_token`
+  for folder-based agents (file batches still apply). On again = identical access restored.
+
+## Restarting the map (2026-09-16)
+
+`omni_world_restart` (HTTP `POST /omni/world/restart`) quits to the menu and re-enters the
+same world, then waits until it is playable. Use it when a change needs a fresh load:
+staged mods, `<ns>:load` wiring (bossbars/teams/scores), command-block chains that
+initialise on load, or a reordered build. It also re-applies every pending `_dev/` batch
+and re-ingests `functions/*.mcfunction`. Body `{name?, waitForReady?=true, timeoutMs?=30000}`;
+response `{ok, world, restarted, ready, waitedMs, statusState}`. A restart can only reload
+the map that is running (another name → `world_mismatch`).
+
 ## First agent call (canonical flow)
 
 ```
-1. omni_ping                          -> confirm bridge up (no auth)
-2. omni_pair {code: "ACDM3491"}       -> user reads 8-char code off device
-3. omni_state                         -> confirm a world is loaded
+1. omni_map_connect {map: "my_map"}   -> one call, no pairing code (see above)
+2. omni_ping                          -> confirm bridge up (no auth)
+3. omni_pair {code: "ACDM3491"}       -> ONLY if you have no map-folder access
+4. omni_state                         -> confirm a world is loaded
 4. omni_knowledge {topic: "rules"}    -> read non-negotiables
 5. omni_blueprint { apply: true,
    steps: [{ kind: "cylinder", block: "minecraft:stone",
@@ -118,7 +194,7 @@ mcp/
 ├── src/
 │   ├── index.ts          # entry point
 │   ├── selfcheck.ts      # in-process test battery
-│   ├── server.ts         # 51 tools + 13 resources + 5 prompts (incl. omni_mapdev_mode, omni_map_guide)
+│   ├── server.ts         # 61 tools + 13 resources + 5 prompts (incl. omni_mapdev_mode, omni_map_guide)
 │   ├── bridge.ts         # HTTP client with error mapping
 │   ├── config.ts         # env-driven runtime config
 │   ├── translate.ts      # 1.20→1.8 block/item name+meta translation
@@ -188,11 +264,11 @@ npm run e2e         # اختبار JSON-RPC حقيقي
 | `OMNIMOD_FORGE_COMPAT_REPO` | مربوط افتراضياً: `https://github.com/Mcamento8/omnimod-forge-compat` | المستودع العام لطبقة توافق Forge 1.20.1 (يظهر عبر `omni_knowledge topic='repos'`) |
 | `OMNIMOD_COMMAND_BLOCKS_REPO` | مربوط افتراضياً: `https://github.com/Mcamento8/omnimod-command-blocks` | المستودع العام لنظام الكوماند بلوك (يظهر عبر `omni_knowledge topic='repos'`) |
 
-## ما يعطيك إياه الـ MCP (51 أداة، 13 موردًا، 5 prompts)
+## ما يعطيك إياه الـ MCP (53 أداة، 13 موردًا، 5 prompts)
 
-**الاتصال** (10): `omni_ping`, `omni_pair`, `omni_config`, `omni_state`, `omni_help`, `omni_logs`, `omni_errors`, `omni_notifications`, `omni_agentlog`, `omni_devpatch_verify`.
+**الاتصال** (11): `omni_map_connect`, `omni_ping`, `omni_pair`, `omni_config`, `omni_state`, `omni_help`, `omni_logs`, `omni_errors`, `omni_notifications`, `omni_agentlog`, `omni_devpatch_verify`.
 
-**العوالم ووضع الخريطة** (6): `omni_worlds`, `omni_world_create`, `omni_world_enter`, `omni_world_quit`, `omni_mapdev_status`, `omni_mapdev_mode` (التبديل بين وضع التطوير والمعاينة: المعاينة = كل كوماند بلوك مخفي/غير قابل للفتح/غير قابل للكسر بينما يستمر عمل منطقه — شكل الخريطة كأنها منشورة). قوالب العوالم: `void_single`, `void_platform_7x7`, `flat`, `default`.
+**العوالم ووضع الخريطة** (7): `omni_worlds`, `omni_world_create`, `omni_world_enter`, `omni_world_quit`, `omni_world_restart`, `omni_mapdev_status`, `omni_mapdev_mode` (التبديل بين وضع التطوير والمعاينة: المعاينة = كل كوماند بلوك مخفي/غير قابل للفتح/غير قابل للكسر بينما يستمر عمل منطقه — شكل الخريطة كأنها منشورة). قوالب العوالم: `void_single`, `void_platform_7x7`, `flat`, `default`.
 
 **بناء المابات** (13): `omni_block_translate`, `omni_item_translate`, `omni_block_search`, `omni_shape_solid_box`, `omni_shape_hollow_box`, `omni_shape_cylinder`, `omni_shape_sphere`, `omni_shape_pyramid`, `omni_shape_gable_roof`, `omni_shape_hip_roof`, `omni_shape_building` (بيت كامل بباب ونوافذ وسقف), `omni_shape_line`, `omni_blueprint` (متعدد العمليات في استدعاء واحد), `omni_batch_validate`, `omni_batch_apply`.
 
@@ -232,12 +308,66 @@ npm run e2e         # اختبار JSON-RPC حقيقي
 6. **الدفعات تُطبَّق خلال ~2 ثانية.** `MapDevSyncRuntime` يستطلع كل 40 tick. اقرأ `/omni/logs` بعد كل دفعة مهمة.
 7. **تعديلات المحرك تحتاج DevPatch.** استخدم `omni_devpatch_verify` للتحقق.
 
+## جديد (2026-09-22): نماذج العالم ثلاثية الأبعاد — OMNI3D أقوى أداة لبناء المابات
+
+المحرك الآن يحمل **نماذج ثلاثية الأبعاد حقيقية** داخل العالم: OBJ + MTL بأي شكل
+وأي حجم (من قطعة ديكور إلى تضاريس بعرض 300 بلوك)، مع تصادم قابل للمشي فوق
+أسطحه الحقيقية، وأنيميشن keyframe لكل مجموعة، وتفاعلات مخصصة تماماً (قوائم
+أفعال للنقر الأيمن/الأيسر: command / animation / sound / message / event /
+remove — فعل الأمر يمر عبر مسار الكوماند بلوك فأي أمر يعمل).
+
+**كيف تستخدمه:**
+- `omni_command` مع عائلة `/omni3d` (صلاحية 2، الكوماند بلوك يعمل):
+  place / remove / list / info / models / interaction / animate / scale / rotate /
+  move / collision / binditem / unbinditem.
+- نقاط HTTP: `GET /omni/model3d/list`، `POST /omni/model3d/upload`
+  (`{name, obj|objB64, mtl?, profile?}` — رفع نموذج لمخزن العالم)،
+  `POST /omni/model3d/place|configure|animate|remove`، `GET /omni/model3d/profile`.
+- المودات تشحن النماذج كـ `assets/<ns>/models3d/*.obj` + ملف تعريف جانبي.
+
+**العقيدة — 3D أولاً، لكن طلب المستخدم هو المواصفة.** للمنشآت الكبيرة أو
+المعقدة (تضاريس، مبانٍ مخصصة، أشكال عضوية) النماذج هي الأقوى دائماً: تخبز في
+Display Lists أرخص من آلاف الكتل والشبكة لا تتشوه أبداً. لكن إن طلب المستخدم
+ماباً بكتل ماين كرافت العادية فابنها بكتل عادية — لا تفرض نماذج لم يطلبها.
+البناء الهجين (كتل فوق سطح تضاريس ثلاثي الأبعاد) مواطن من الدرجة الأولى.
+جدول القرار الكامل وعقد الوضع/المقاس ومخطط JSON للملف الشخصي وأنيميشن
+التفاعلات وسير العمل الهجين وميزانية الأداء للأجهزة الضعيفة — كلها في ملف
+حزمة سياق الماب `agent/12_OMNI_3D_MODELS.md` (v8+) — اقرأه قبل أي عمل
+ثلاثي الأبعاد على ماب متصلة. سقف الرفع 8MB للـOBJ؛ وحدة OBJ = بلوك؛ التصادم
+يفكك ويوزع تلقائياً بدمج جشع (مؤكد: بيت 8×4×8 يصير صندوقاً واحداً).
+
+## اختصار الاتصال (2026-09-16): مجلد الماب هو بيانات الاعتماد
+
+كل ماب تطوير يحمل ملفاً تملكه اللعبة: `worlds/<map>/_dev/state/agentlink.json`
+يحتوي `{mapName, port, token, scope:"map", enabled, endpoints}`. من يستطيع قراءة مجلد
+الماب يمتلك فعلياً التحكم الكامل به، فلا يوجد شيء يُربط:
+
+```
+TOKEN=$(python -c "import json;print(json.load(open('worlds/<map>/_dev/state/agentlink.json'))['token'])")
+curl -H "Authorization: Bearer $TOKEN" http://<device-ip>:26911/omni/state
+# أو عبر الـ MCP:  omni_map_connect {map:"<map>"}   (يضبط host+port+token ثم يعمل ping)
+```
+
+- صالح من أي IP، بلا نافذة ربط، بلا كود، بلا انتهاء صلاحية، ويستمر بعد إعادة تشغيل الماب واللعبة.
+- **مقيد بهذا الماب فقط:** `/omni/world/create` و`/omni/world/enter <ماب آخر>` تُرجع
+  `scope_violation`. داخل الماب تحكمك كامل: بناء، أوامر، مشي، كيانات، شاشات، و`POST /omni/world/restart`.
+- **اللاعب وحده يوقفه:** خيار *Map Folder Agent Access* في الإعدادات. إيقافه = `bad_token`
+  لوكلاء المجلد (دفاتر الملفات ما زالت تُطبَّق). إعادة تشغيله = نفس الصلاحية تعود كما هي.
+
+## إعادة تشغيل الماب (2026-09-16)
+
+`omni_world_restart` (أو `POST /omni/world/restart`) يخرج إلى القائمة ثم يعيد تحميل نفس
+العالم وينتظر حتى يصبح جاهزاً. استخدمه عندما يحتاج التغيير تحميلاً جديداً: مودات مُدرجة،
+دالة `<ns>:load`، سلاسل الكوماند بلوك، أو إعادة ترتيب البناء. يعيد أيضاً تطبيق كل دفعات
+`_dev/` المعلّقة. المتغيرات `{name?, waitForReady?=true, timeoutMs?=30000}`.
+
 ## أول استدعاء للوكيل (التدفق القانوني)
 
 ```
-1. omni_ping                          -> تأكد أن الجسر يعمل
-2. omni_pair {code: "ACDM3491"}       -> المستخدم يقرأ الكود من الجهاز
-3. omni_state                         -> تأكد أن عالماً محمّلاً
+1. omni_map_connect {map: "my_map"}   -> استدعاء واحد، بلا كود ربط (انظر أعلاه)
+2. omni_ping                          -> تأكد أن الجسر يعمل
+3. omni_pair {code: "ACDM3491"}       -> فقط إذا لم تملك وصولاً لمجلد الماب
+4. omni_state                         -> تأكد أن عالماً محمّلاً
 4. omni_knowledge {topic: "rules"}    -> اقرأ القواعد
 5. omni_blueprint { apply: true,
    steps: [{ kind: "cylinder", block: "minecraft:stone",

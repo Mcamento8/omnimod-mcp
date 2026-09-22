@@ -42,6 +42,20 @@ export interface OmniConfig {
    * gates). Served through omni_knowledge(topic:"repos") and describeConfig().
    */
   commandBlocksRepoUrl: string | null;
+  /**
+   * Public CC0 3D model library (Wavefront OBJ) that the omni_3d_* tools
+   * search, inspect and fetch from. Defaults to the published mirror; set it
+   * to null to disable the library tools entirely (they then report that the
+   * library is unlinked instead of failing on the network).
+   */
+  assetLibraryRepoUrl: string | null;
+  /**
+   * Optional local checkout of the asset library. When set, omni_3d_* reads
+   * from disk instead of the network — faster, and works offline.
+   */
+  assetLibraryLocalPath: string | null;
+  /** Where fetched models and the cached catalogue are written. */
+  assetCacheDir: string;
 }
 
 function envInt(name: string, fallback: number): number {
@@ -73,6 +87,12 @@ export const DEFAULT_FORGE_COMPAT_REPO =
   "https://github.com/Mcamento8/omnimod-forge-compat";
 export const DEFAULT_COMMAND_BLOCKS_REPO =
   "https://github.com/Mcamento8/omnimod-command-blocks";
+/**
+ * Default public CC0 3D model library. Same pre-linked convention as the two
+ * mirrors above: unset -> this default, explicitly empty -> unlinked.
+ */
+export const DEFAULT_ASSET_LIBRARY_REPO =
+  "https://github.com/Mcamento8/omnimod-3d-library";
 
 function envUrlOrDefault(name: string, fallback: string): string | null {
   const raw = process.env[name];
@@ -106,6 +126,13 @@ export const config: OmniConfig = {
     "OMNIMOD_COMMAND_BLOCKS_REPO",
     DEFAULT_COMMAND_BLOCKS_REPO,
   ),
+  assetLibraryRepoUrl: envUrlOrDefault(
+    "OMNIMOD_ASSET_LIBRARY_REPO",
+    DEFAULT_ASSET_LIBRARY_REPO,
+  ),
+  assetLibraryLocalPath: envPath("OMNIMOD_ASSET_LIBRARY_PATH"),
+  assetCacheDir: envPath("OMNIMOD_ASSET_CACHE_DIR") ||
+    resolve(envPath("OMNIMOD_WORK_DIR") || resolve(homedir(), ".omnimod-mcp"), "assets"),
 };
 
 export function baseUrl(): string {
@@ -123,5 +150,8 @@ export function describeConfig(): string {
     `autoTranslateBlocks: ${config.autoTranslateBlocks}`,
     `forgeCompatRepoUrl: ${config.forgeCompatRepoUrl ?? "(not set — set OMNIMOD_FORGE_COMPAT_REPO)"}`,
     `commandBlocksRepoUrl: ${config.commandBlocksRepoUrl ?? "(not set — set OMNIMOD_COMMAND_BLOCKS_REPO)"}`,
+    `assetLibraryRepoUrl: ${config.assetLibraryRepoUrl ?? "(unlinked — omni_3d_* tools disabled)"}`,
+    `assetLibraryLocalPath: ${config.assetLibraryLocalPath ?? "(not set — the library is read over HTTPS)"}`,
+    `assetCacheDir: ${config.assetCacheDir}`,
   ].join("\n");
 }

@@ -144,8 +144,8 @@ export function helpText(): string {
     `  omnimod-mcp --version    Print the version.`,
     `  omnimod-mcp --help       Show this help.`,
     ``,
-    `One-command install (Windows PowerShell):`,
-    `  powershell -NoProfile -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/Mcamento8/omnimod-mcp/main/scripts/install-windows.ps1 | iex"`,
+    `One-command install (Windows: cmd or PowerShell, paste as ONE line):`,
+    `  powershell -NoProfile -ExecutionPolicy Bypass -c "$f=$env:TEMP+'\\omnimod-install.ps1'; irm https://raw.githubusercontent.com/Mcamento8/omnimod-mcp/main/scripts/install-windows.ps1 -OutFile $f; & $f"`,
   ].join("\n");
 }
 

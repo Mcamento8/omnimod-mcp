@@ -65,4 +65,65 @@ Cleaner: keep modded-block batches in separate, later-sorting files (for example
 `ops-0900-modded.json`) so a mod that failed to load does not take out your vanilla
 structure work.
 
-<!-- omnimod-docs-version: omnimod-agent-docs-4 -->
+## Removing and replacing a mod
+
+There is no separate delete endpoint for mods — staged mods are ordinary map files in the
+`mods` root, so the general file API removes them. This is the complete lifecycle:
+
+| what you want | how |
+|---|---|
+| list what is staged | `GET /omni/mapfiles/list?root=mods` (also `GET /omni/mods` for loaded ones) |
+| remove a mod | `POST /omni/mapfiles/delete {"root":"mods","path":"MyMod.jar"}` |
+| remove a folder mod | `POST /omni/mapfiles/delete {"root":"mods_folders","path":"MyMod"}` |
+| replace a mod | remove it, then `POST /omni/mod/add` with the new bytes |
+| change a mod's files | `POST /omni/mapfiles/write` into `mods_folders`, then reload |
+
+After any of these **reload the world** (`POST /omni/world/restart`) — a staged mod is only
+read at world start, exactly like installing.
+
+## The rules that govern every change you make to this map
+
+These are not stylistic preferences. A change that breaks one of them is a defect even when
+it appears to work.
+
+1. **General fixes only — never a fix for one mod.** Anything you change in the compat
+   system must be keyed on evidence that *any* mod can present: a namespace, a resource
+   path, a class name, a superclass, an interface, a method signature. If your fix only
+   works because you know which mod is installed, it is a per-mod hack and it is forbidden.
+   Ask "what general property of this mod's own bytes proves this?" and key on that.
+2. **No invented defaults.** A value must come from the mod's own bytecode, its assets, its
+   lang files, or the 1.8 vanilla equivalent. Never fill in a plausible-looking value and
+   apply it to everything — a wrong default silently mislabels every other mod.
+3. **No dead code.** Do not add a hook, a field or a knob that nothing reads. If you cannot
+   show the line that consumes it, it does not belong in the tree.
+4. **Evidence before action, evidence after.** Before: the log line, the bytecode, the
+   missing asset that proves the gap. After: the log line that proves your change fired.
+   A result you did not observe is not a result.
+5. **Read the context first.** `GET /omni/context` returns every document of this map.
+   State-changing requests answer `428 context_required` until you acknowledge the pack
+   with `POST /omni/context/ack {"fingerprint": ...}`. The refusal carries the whole pack
+   with it, so you can never be blocked by it — reads are never gated.
+6. **Ground your work in the real Forge 1.20.1 API.** This engine emulates Forge 1.20.1 on
+   a 1.8 base. Before deciding how something *should* behave, read how Forge 1.20.1
+   actually defines it. If the Forge 1.20.1 sources/jars are not already on this machine,
+   fetch them once (the Forge Maven `net.minecraftforge:forge:1.20.1-*` artifacts, or the
+   official Forge source distribution) and keep them as your reference. Map what you find
+   to the closest real 1.8 behaviour, and say in a comment when you had to approximate.
+
+## Monitoring the logs while you work
+
+Log evidence is mandatory, not optional. Use these in this order:
+
+| need | endpoint |
+|---|---|
+| new lines since your last check | `GET /omni/logs?since=<lastSeq>` (the ring is bounded: 4096 records, oldest evicted) |
+| only problems | `GET /omni/errors?since=<lastSeq>` |
+| one mod's complete trail | `GET /omni/modlogs?mod=<modId>&sinceSeq=<lastPanelSeq>` |
+| all mods, counted | `GET /omni/modstats` (per-mod totals + a world-level noise ledger) |
+| everything, verbatim | `GET /omni/aiagent/logs_digest` (ring + Mod Logs panel + console + shaders) |
+| durable copy on disk | `logs/agent_link_runtime.log`, rotated at 2 MB keeping 3 generations |
+
+Always re-check the logs **after** you apply a change to the map — the point is to see what
+your change actually did, not what you expected it to do.
+
+<!-- omnimod-docs-version: omnimod-agent-docs-9 -->

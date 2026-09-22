@@ -1,0 +1,51 @@
+omnimod-mcp 1.4.0 — the CC0 3D model library, wired end to end
+
+An agent building a map or a mod regularly needs a 3D model: a creature, a
+building, a chair. Until now it had two bad options — hand-author an OBJ (slow,
+and it will not look good) or guess a model id and upload something it has never
+seen. This release adds the missing loop:
+
+    search -> inspect -> fetch -> VERIFY -> upload -> place
+
+New tools (8, taking the server from 53 to 61):
+  omni_3d_library   what the library contains and how to use it
+  omni_3d_search    free text + category/tag/anim/maxTri/maxSize/textured
+  omni_3d_inspect   the full measured record, plus a mismatch warning against
+                    the agent's own description of what it needs
+  omni_3d_fetch     download ONLY the chosen model and verify its SHA-256
+  omni_3d_models    what the running world already has (registered + placed)
+  omni_3d_upload    push into the running game; handles the context gate itself
+  omni_3d_place     place at a base-centre anchor with voxelized collision
+  omni_3d_animate   play a keyframe clip on a placed model
+
+Why the numbers can be trusted: the catalogue was produced by running the TARGET
+ENGINE'S OWN OBJ parser over every file, so triangle counts are post-parse, sizes
+are in BLOCKS, and the named parts are the real o/g groups — `anim:"per-part"`
+means per-part animation will actually work. 5,952 CC0 (public-domain) models;
+commercial use allowed, no attribution required.
+
+Design rule that makes it cheap: ONE small file (catalog/index.min.json, ~3 MB,
+fetched lazily and cached on disk) answers every selection AND verification
+question, so an agent never clones a 230 MB repository to choose a chair. The
+tools return compact projections; the blob never reaches the agent's context.
+
+Also in this release:
+- bridge.ackContext() + a context_required error hint, so a state-changing call
+  that hits the context-first gate can ack and retry instead of bouncing.
+- The library is registered as a third entry in omni_knowledge topic='repos',
+  and all seven /omni/model3d/* endpoints are now in the endpoint catalog.
+- docs/agent/12_OMNI_3D_MODELS.md gains a "find, VERIFY, fetch, use" section with
+  the field-to-need selection table; the pack is now omnimod-agent-docs-9.
+- selfcheck: search ranking, every filter, id resolution (exact / short /
+  ambiguous / missing), engine-fit assessment, the hash contract, and cache
+  staleness — all offline. An optional live round trip
+  (OMNIMOD_SELFCHECK_LIVE_ASSETS=1) fetches a real model and verifies its hash.
+- e2e asserts the eight 3D tools are advertised with usable descriptions.
+- scripts/full-test.mjs no longer asserts an EXACT tool count; it asserts a
+  floor, because an exact match breaks on every addition and trains people to
+  edit the number instead of testing anything.
+
+Verification: tsc clean; selfcheck PASS (with the live round trip: "5952 models,
+fetched kenney/castle-kit/wall and verified its SHA-256"); e2e PASS (61 tools);
+full-test 102 passed / 0 failed. The tools were also driven over real JSON-RPC,
+including the negative path (a bridge call with no bridge fails cleanly).

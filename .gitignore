@@ -9,3 +9,6 @@ dist/
 # The two engine-source repository packages are published as SEPARATE git
 # repositories (see PUBLISHING.md) — never nest them inside the MCP repo.
 repos/
+
+# scratch argument file used by the local rpc_*.mjs helpers
+rpc_args.json

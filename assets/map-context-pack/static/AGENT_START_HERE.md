@@ -9,6 +9,17 @@ This pack exists so that you can work at full professional capability **with or 
 the OmniMod MCP server. If you are connected to the MCP server, you must still read
 these files: they are map-specific and the MCP knowledge base is not.
 
+## You already have control — read this first
+
+Because you can read this folder, you already hold this map's control credential.
+It is in `state/agentlink.json`
+(written by the game): it carries the device port and a token that is **scoped to this
+map**. Send it as `Authorization: Bearer <token>` and you get FULL control inside the
+map - build, commands, player walking, entities, screen clicks, testing, and a full
+map restart. No pairing code, no expiry, and it survives restarts. With the MCP
+server this is one call: `omni_map_connect {map:"__OMNIMOD_MAP__"}`. Everything you can do
+with it, and the testing loop, is in `agent/11_AGENT_CONTROL_AND_RESTART.md`.
+
 ## Gate 1 — read before you write anything
 
 Read these, in this order, completely. Do not skim.
@@ -32,6 +43,9 @@ Then, only as needed for the task at hand:
 - `agent/07_MODS_IN_THIS_MAP.md` — installing a mod into THIS map.
 - `agent/08_TROUBLESHOOTING.md` — symptom to cause to fix.
 - `agent/09_HANDOFF_PROTOCOL.md` — how to leave the folder for the next agent.
+- `agent/10_SYSTEM_IMPROVEMENT_CONTEXT.md` — how to improve the engine itself safely.
+- `agent/11_AGENT_CONTROL_AND_RESTART.md` — taking live control, testing inside the map, restarting it.
+- `agent/12_OMNI_3D_MODELS.md` — 3D world models (any shape, any size): WHEN to use them, when NOT to, exact placement and sizing, animation, interactions, the hybrid terrain workflow, and the performance budget.
 
 ## Gate 2 — understand the user before you build
 
@@ -42,7 +56,13 @@ Building the wrong thing beautifully is a failure. Before the first block:
 2. Resolve every ambiguity from `MAP_OVERVIEW.md` first (the user's intent may
    already be recorded there by a previous agent). Only ask the user about things that
    genuinely cannot be inferred and that would change the build.
-3. Write the specification into `MAP_OVERVIEW.md` before building, so the next
+3. Decide the BUILDING MATERIAL with the same precision: does this request mean
+   normal Minecraft blocks, 3D world models (OMNI3D), or a hybrid? The decision
+   contract is `agent/12_OMNI_3D_MODELS.md` §1 — the short form:
+   a request for normal blocks gets normal blocks, a request for realism or large
+   organic shapes gets 3D models, and ambiguity is resolved by the map's existing
+   language (scan first) or by asking the user — never by guessing.
+4. Write the specification into `MAP_OVERVIEW.md` before building, so the next
    agent inherits the intent and not just the blocks.
 
 ## Gate 3 — nothing is done until it is verified in the world
@@ -63,6 +83,7 @@ bad block name is still recorded as `applied`. Therefore:
 | `MAP_OVERVIEW.md`, `CHANGE_LOG.md`, `FILE_MAP.md` | **you** | The game seeds them once, then never touches them. Keep them true. |
 | `build/*.json` | **you** | Your batches. |
 | `state/applied.json` | the game | Never edit. Editing it causes re-application. |
+| `state/agentlink.json` | the game | Read it — it is your live-control credential. Never edit it. |
 | `state/verification/*` | **you** | Your test evidence. |
 
 ## The one-paragraph summary of how this works
@@ -73,4 +94,4 @@ whose hash is not in the ledger, writes the result into the ledger, and posts a 
 `[MapDev]` chat line. That is the entire loop. Everything else in this pack exists to make
 sure the ops inside that JSON are correct, precise, and provably applied.
 
-<!-- omnimod-docs-version: omnimod-agent-docs-4 -->
+<!-- omnimod-docs-version: omnimod-agent-docs-9 -->

@@ -53,6 +53,18 @@ the log ring — that is step zero for all of them.
 | `/function <ns>:x` says unknown function | wrong namespace or filename folding | id = `<map-ns>:<file>`; check `/omni_dev status` (prints the ns) |
 | tick function runs but nothing happens | a line failed — check the game feedback line for that command | run the line standalone first; see `04_TESTING_MANDATE.md` |
 
+## 3D model problems (omni3d)
+
+The full symptom → cause → fix table is `agent/12_OMNI_3D_MODELS.md` §10.
+The three you will meet most:
+
+- **model not registered** — check `/omni3d models` for the real id; models that
+  come from a mod need the mod staged and a world reload before they appear.
+- **player walks through the model** — `/omni3d info nearest` (collision must be
+  true), then `/omni3d collision nearest auto`.
+- **wrong size** — OBJ units are blocks and `scale` multiplies the mesh AND its
+  collision; verify real dimensions with `/omni3d info nearest` before adjusting.
+
 ## Bridge problems
 
 | symptom | cause | fix |
@@ -101,4 +113,4 @@ the log ring — that is step zero for all of them.
 4. If you diagnose something not listed here and the cause is general, add it to
    `CHANGE_LOG.md` with the evidence so the next agent finds it.
 
-<!-- omnimod-docs-version: omnimod-agent-docs-4 -->
+<!-- omnimod-docs-version: omnimod-agent-docs-9 -->

@@ -24,7 +24,7 @@ cd mcp
 npm install        # once, if node_modules is missing
 npm run build      # TypeScript compiles clean
 npm run selfcheck  # in-process battery: PASS
-npm run e2e        # JSON-RPC session: 51 tools, 13 resources, 5 prompts: PASS
+npm run e2e        # JSON-RPC session: 61 tools, 13 resources, 5 prompts: PASS
 ```
 
 ---
@@ -211,7 +211,7 @@ Kilo/ZCode). Connection env vars:
 cd mcp
 npm run build      # exit 0
 npm run selfcheck  # "selfcheck PASS"
-npm run e2e        # "E2E PASS" — 51 tools, 13 resources, 5 prompts
+npm run e2e        # "E2E PASS" — 61 tools, 13 resources, 5 prompts
 ```
 
 ### 5.2 Live (game running with Agent Link)
@@ -256,7 +256,7 @@ Click/GET one URL — it must resolve to the GitHub repo (not 404).
 |---|---|
 | MCP compiles clean | `npm run build` (exit 0) |
 | Registry/translation/shapes/scaffold/inspect/mapdocs | `npm run selfcheck` |
-| Full JSON-RPC surface: 51 tools, 13 resources, 5 prompts | `npm run e2e` |
+| Full JSON-RPC surface: 61 tools, 13 resources, 5 prompts | `npm run e2e` |
 | Master guide served (tool + resource, ~24 KB) | e2e + `omni_map_guide` |
 | Dual-mode tool against a real game | `npm run live-test` |
 | Game's per-map context pack == MCP pack | byte-identical export check (MapDevWorkspaceDocsExport → mcp/assets/map-context-pack) — verified during this build |

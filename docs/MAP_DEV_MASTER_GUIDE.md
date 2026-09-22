@@ -126,6 +126,7 @@ Always Active.
 | `/omni_dev where` | Print the real folder path for this platform. |
 | `/omni_dev enable` | Create the workspace if missing. |
 | `/omni_dev linkset <uri> [root]` | Link an external folder (Android SAF). |
+| `/omni3d ...` | **3D world models (NEW 2026-09-22)** — the full command family: `place / remove / list / info / models / interaction / animate / scale / rotate / move / collision / binditem / unbinditem`. Permission 2 (command blocks OK). See §14. |
 
 ---
 
@@ -428,3 +429,107 @@ vars or `omni_config`) with `omni_knowledge {topic:"repos"}`.
 [ ] dual-mode: play → trigger → dev  — prove the published shape works
 [ ] handoff: changelog/overview/filemap/agentlog
 ```
+
+---
+
+## 14. 3D world models — OMNI3D (NEW 2026-09-22)
+
+The engine holds real 3D models in the world: Wavefront OBJ + MTL, any shape and
+any size, with walkable collision on the true surfaces, per-group animation, and
+custom click interactions. This is the strongest tool for large or complex
+structures — and the most commonly misused one. The complete contract lives in the
+map context pack file `agent/12_OMNI_3D_MODELS.md` (docs v8+); this chapter is the
+working summary.
+
+### 14.1 The doctrine (decide the building material with precision)
+
+| The user says... | You build with... |
+|---|---|
+| "normal blocks", "vanilla", "blocky" | blocks only — NO models |
+| "3D map", "realistic", "custom models" | 3D models |
+| "blocks on top of the 3D surface" | hybrid (§14.5) |
+| small decoration on an all-block map | blocks first |
+| anything ambiguous | match the map's existing language (scan + `/omni3d list`), or ask |
+
+Never inject 3D models the user did not ask for. Never silently downscale either.
+
+### 14.2 The pipeline in five commands
+
+```bash
+# 0. LOOK IN THE CC0 LIBRARY FIRST (5,952 measured, public-domain models)
+omni_3d_search {query:"wooden chair", maxTri:600, textured:true}
+omni_3d_inspect {id:"kenney/furniture-kit/chair", need:"a chair for a tavern"}
+omni_3d_fetch {id:"kenney/furniture-kit/chair"}   # downloads ONLY this one + verifies its SHA-256
+omni_3d_upload {id:"kenney/furniture-kit/chair"}  # into the running world
+
+# 1. See what already exists (per-world store + mods)
+omni_command {command:"/omni3d models"}
+
+# 2. Stage a model (OBJ text or base64, MTL optional, profile optional — ≤ 8MB)
+POST /omni/model3d/upload {name:"my_house", obj:"v ...\nf ...", mtl:"newmtl m\nKd ...", profile:{...}}
+
+# 3. Place at the anchor (x,y,z = BASE CENTER of the model; OBJ units are blocks)
+omni_command {command:"/omni3d place omni3d:my_house 100 64 -200 0 1.0"}
+
+# 4. Verify: real dimensions + collision state
+omni_command {command:"/omni3d info nearest"}     # prints size, collision, clips
+GET /omni/model3d/list                            # placed entries: id, pos, scale
+
+# 5. Wire interaction + animation (right-click list / left-click list)
+omni_command {command:"/omni3d interaction nearest interact [{\"type\":\"animation\",\"clip\":\"open\",\"mode\":\"toggle\"}]"}
+omni_command {command:"/omni3d animate nearest open toggle"}
+```
+
+### 14.3 The profile JSON (per-model structure customization)
+
+```json
+{
+  "displayName": "Village Gate",
+  "scale": 1.0,
+  "offsetX": 0, "offsetY": 0, "offsetZ": 0,
+  "renderDistance": 0,
+  "collision": "auto",
+  "collisionResolution": 1.0,
+  "collisionBoxes": [[0,0,0, 16,10,16]],
+  "animations": {
+    "open": {"duration": 1.2, "keys": [{"t":0, "group":"door_leaf", "rotY":0}, {"t":1.2, "group":"door_leaf", "rotY":110}]}
+  },
+  "interact": [{"type":"command", "value":"/say opened"}],
+  "attack": []
+}
+```
+
+Collision modes: `auto` (voxelize + greedy merge — walk on the real surface),
+`full` (one solid box), `boxes` (explicit), `none` (decoration). Animation groups
+are the OBJ `o`/`g` names; `"*"` targets the whole model.
+
+### 14.4 The performance budget (weak devices are the target)
+
+| Rule | Value |
+|---|---|
+| Triangles per model | ≤ 30,000 (aim 5–15k) |
+| Total triangles in view | ≤ 150,000 |
+| Simultaneously animating models | tens, not hundreds |
+| Large terrain materials | prefer `Kd` vertex colors over textures |
+| Texture size | ≤ 512x512 per material |
+| collisionResolution | 1.0 default; 2.0 for models > 150 blocks |
+
+Engine guarantees (automatic): zero cost with no models; bake-once display lists;
+one-time collision voxelization in a spatial hash; client-side animation timelines;
+hard caps (4M voxel cells → auto-coarsen, 4096 boxes → full-box fallback).
+
+### 14.5 Hybrid workflow — blocks on top of a 3D surface
+
+1. Place the terrain model, collision `auto`, and verify the player STANDS on it
+   before any block work.
+2. Raycast down at each block spot (`omni_world_raycast`) to read the real surface
+   height; place blocks at surface + 1.0, integer aligned.
+3. Keep ≥ 0.05 separation from model faces (no z-fighting) and ≥ 0.5 blocks inside
+   the surface edge (no floating half-blocks).
+4. Record the measured heights in CHANGE_LOG.md for the next agent.
+
+### 14.6 Verification (in addition to the standard battery)
+
+`/omni3d list` + `/omni3d info nearest` (dimensions match spec), walk-on-top test
+(the player must STAND — sinking or jitter is FAIL), interaction test, world-reload
+persistence, and `/omni/logs?q=omni3d` clean of new WARN/ERROR.
