@@ -5,7 +5,30 @@
  * the `omni_connect` tool at runtime (which mutates the live session config).
  */
 import { homedir } from "node:os";
-import { resolve, isAbsolute } from "node:path";
+import { resolve, isAbsolute, dirname } from "node:path";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
+/**
+ * The package version, read from package.json.
+ *
+ * It used to be a literal in two files, and it drifted: the terminal announced
+ * 1.3.0 and the MCP handshake advertised 1.3.0 while the published package was
+ * 1.6.0, so anyone reporting a problem quoted a version that did not exist. A
+ * version string that can be wrong is worse than no version string, so it is
+ * read once, here, and every surface re-uses it.
+ */
+export const MCP_VERSION: string = (() => {
+  try {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const pkg = JSON.parse(readFileSync(resolve(here, "..", "package.json"), "utf8")) as {
+      version?: string;
+    };
+    return typeof pkg.version === "string" && pkg.version.length > 0 ? pkg.version : "unknown";
+  } catch {
+    return "unknown";
+  }
+})();
 
 export interface OmniConfig {
   /** Host or IP where the game (Agent Dev Link bridge) is listening. */

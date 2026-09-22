@@ -1,2 +1,6 @@
 * text=auto eol=lf
 *.png binary
+# Windows launchers must keep CRLF: cmd.exe is happiest with it, and a
+# checkout that converts them to LF can break label/goto handling.
+*.bat text eol=crlf
+*.ps1 text eol=crlf

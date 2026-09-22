@@ -20,6 +20,7 @@ import { spawn, execFileSync } from "node:child_process";
 import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { mkdir, rm } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -359,10 +360,19 @@ async function main() {
       return (e.stdout || "") + (e.stderr || "");
     }
   };
-  if (/1\.3\.0/.test(cli(["--version"]))) ok("cli --version");
-  else fail("cli --version", "no version string");
-  if (/Kilo Code/.test(cli(["setup"]))) ok("cli setup");
-  else fail("cli setup", "no Kilo block");
+  // Assert against package.json, never against a literal. The literal here used
+  // to be "1.3.0" and it broke the moment the version moved on — which trains
+  // people to edit the test instead of testing anything.
+  const pkgVersion = JSON.parse(readFileSync(join(here, "..", "package.json"), "utf8")).version;
+  const versionOut = cli(["--version"]);
+  if (versionOut.includes(pkgVersion)) ok(`cli --version = ${pkgVersion}`);
+  else fail("cli --version", `expected "${pkgVersion}" in: ${versionOut.trim() || "(empty)"}`);
+  const setupOut = cli(["setup"]);
+  if (/Kilo Code/.test(setupOut) && /Claude Desktop/.test(setupOut) && /VS Code/.test(setupOut)) {
+    ok("cli setup (connection card + client blocks)");
+  } else {
+    fail("cli setup", "connection card is missing expected client blocks");
+  }
   if (/omnimod-mcp doctor/.test(cli(["--help"]))) ok("cli --help");
   else fail("cli --help", "no help text");
   const doc = cli(["doctor"]);

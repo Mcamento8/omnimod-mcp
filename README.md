@@ -113,6 +113,33 @@ vars, then publish the MCP itself — with the full verification battery).
 — served to agents as the `omni_map_guide` tool and the
 `omnimod://knowledge/map-dev-guide` resource.
 
+## Running it: the three commands you actually use
+
+```bash
+omnimod-mcp setup     # print the CONNECTION CARD: every value you need, plus
+                      # paste-ready JSON for Claude Desktop, Claude Code, Cursor,
+                      # VS Code, Cline, Kilo Code, Windsurf, Zed, Continue, and a
+                      # plain stdio block for anything else.
+omnimod-mcp doctor    # diagnose a connection problem (node, files, bridge, token,
+                      # repo links, cache folders)
+omnimod-mcp serve     # RUN the server in THIS window and stay open.
+                      # Close the window (or Ctrl+C) to stop it.
+```
+
+**Normal use does not need `serve`.** Your MCP client spawns the server itself —
+you paste the client block once, restart the editor, and that is it. No window to
+keep open.
+
+`serve` exists for when you want to *watch* it: it prints the connection card and
+then runs the server in the foreground, so you can see the startup state
+(bridge URL, token, project/worlds/work paths, which asset libraries are linked)
+and watch it stop cleanly when you close the window. Do not type into that window
+— its input is the server's JSON-RPC channel.
+
+The Windows launcher (`install.bat`) and the one-command installer both end by
+printing the card and offering to start the server for you; on macOS/Linux,
+`./install.sh --serve` does the same non-interactively.
+
 ## Configuring your client
 
 The server needs three env vars (all optional — they have sensible defaults):

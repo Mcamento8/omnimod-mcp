@@ -18,10 +18,15 @@
   (also honored via the OMNIMOD_MCP_DIR environment variable, mainly for tests).
 .PARAMETER SkipTests
   Skip the selfcheck battery (faster; NOT recommended).
+.PARAMETER Serve
+  After installing, START the MCP server in this window and keep it open.
+  Close the window (or Ctrl+C) to stop it. Without this switch the installer
+  prints your connection card and offers the same thing interactively.
 #>
 param(
   [string]$InstallDir = "",
-  [switch]$SkipTests
+  [switch]$SkipTests,
+  [switch]$Serve
 )
 
 # NOTE: deliberately "Continue", NOT "Stop". Native tools (git/npm) write
@@ -160,9 +165,56 @@ Ok "global command: $($cmd.Source)"
 
 Write-Host ""
 Write-Host "================================================================"
-Write-Host "  SUCCESS — تم التثبيت بنجاح!"
-Write-Host "  From ANY terminal, in ANY folder, run:   omnimod-mcp"
-Write-Host "  It prints your personal connect guide (Kilo / Cline / Cursor / Claude)."
+Write-Host "  SUCCESS - the MCP is installed."
 Write-Host "================================================================"
 Write-Host ""
+
+# The full connection card: every value needed to add this MCP to any editor,
+# plus paste-ready JSON for the common clients.
 & node (Join-Path $InstallDir "dist\index.js") setup
+
+Write-Host ""
+Write-Host "================================================================"
+Write-Host "  TWO WAYS TO USE IT"
+Write-Host ""
+Write-Host "  * NORMAL USE - paste your client block (above) into your AI"
+Write-Host "    editor's MCP settings, then restart that editor. The editor"
+Write-Host "    starts the server itself; keep no window open."
+Write-Host ""
+Write-Host "  * WATCH IT RUN - start the server in THIS window. It stays open"
+Write-Host "    while it runs, and closing this window (or Ctrl+C) stops it."
+Write-Host "================================================================"
+Write-Host ""
+
+# Only prompt when a human is present: a redirected/automated run has no
+# console to read from, and blocking on a prompt would look like a hang.
+$interactive = -not $env:OMNIMOD_MCP_NO_PROMPT -and $Host.Name -eq "ConsoleHost"
+
+if ($Serve) {
+  Write-Host "Starting the server. Close this window or press Ctrl+C to stop it."
+  Write-Host "Do NOT type here - this window's input is the server's data channel."
+  Write-Host ""
+  & node (Join-Path $InstallDir "dist\index.js") serve
+  Write-Host ""
+  Write-Host "[omnimod-mcp] server stopped."
+} elseif ($interactive) {
+  $answer = Read-Host "Start the MCP server in this window now? [y/N]"
+  if ($answer -match '^(y|yes)$') {
+    Write-Host ""
+    Write-Host "Starting the server. Close this window or press Ctrl+C to stop it."
+    Write-Host ""
+    & node (Join-Path $InstallDir "dist\index.js") serve
+    Write-Host ""
+    Write-Host "[omnimod-mcp] server stopped."
+  } else {
+    Write-Host ""
+    Write-Host "Not started. From ANY terminal, in ANY folder, run:"
+    Write-Host ""
+    Write-Host "    omnimod-mcp serve"
+    Write-Host ""
+  }
+} else {
+  Write-Host "From ANY terminal, in ANY folder, run:   omnimod-mcp serve"
+  Write-Host "(or re-run this installer with -Serve)"
+  Write-Host ""
+}

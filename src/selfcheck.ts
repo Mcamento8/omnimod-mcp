@@ -25,6 +25,7 @@ import * as MapDocs from "./mapdocs.js";
 import * as Assets3D from "./assets3d.js";
 import * as Sfx from "./sfx.js";
 import * as ModelCheck from "./modelcheck.js";
+import { MCP_VERSION, setupText, serveBanner, helpText, INSTALL_ROOT } from "./setup.js";
 import { rm, mkdir, stat, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -483,6 +484,62 @@ async function main(): Promise<void> {
   process.stderr.write(
     "  sfx: filters/ranking/arabic-bridge/duration-fit/format/url-encoding/" +
       "sounds.json-merge/header-probe/cache-staleness pass\n",
+  );
+
+  // ------------------------------------------------------------------
+  // Human-facing terminal surface (the connection card + serve banner)
+  // ------------------------------------------------------------------
+  // The version used to be a literal in two files and it drifted: the terminal
+  // announced 1.3.0 while the package was 1.6.0. Anyone reporting a problem
+  // quoted a version that did not exist. These assertions make that impossible.
+  const pkg = JSON.parse(
+    await readFile(join(INSTALL_ROOT, "package.json"), "utf8"),
+  ) as { version: string };
+  assert(
+    MCP_VERSION === pkg.version,
+    `MCP_VERSION (${MCP_VERSION}) must equal package.json (${pkg.version})`,
+  );
+  assert(/^\d+\.\d+\.\d+/.test(MCP_VERSION), `version looks malformed: ${MCP_VERSION}`);
+
+  const card = setupText();
+  // Every value a human needs to wire this into a tool must be on the card.
+  for (const key of [
+    "MCP version", "Install folder", "Entry file", "Node", "Transport",
+    "Bridge URL", "Host / Port", "Pairing token",
+    "Project root", "Worlds dir", "Work dir",
+    "3D models (CC0)", "Sounds (CC0)", "cache",
+    "Forge compat", "Command blocks",
+  ]) {
+    assert(card.includes(key), `connection card is missing "${key}"`);
+  }
+  // ...and a paste-ready block for each client family.
+  for (const client of [
+    "Claude Desktop", "Claude Code", "Cursor", "VS Code", "Cline",
+    "Kilo Code", "Windsurf", "Zed", "Continue",
+  ]) {
+    assert(card.includes(client), `connection card is missing the ${client} block`);
+  }
+  assert(card.includes("mcpServers"), "card must show an mcpServers block");
+  assert(card.includes("context_servers"), "card must show the Zed context_servers shape");
+  assert(card.includes('"type": "stdio"'), "card must show the VS Code stdio shape");
+  assert(card.includes("dist/index.js") || card.includes("dist\index.js"), "card must name the entry file");
+  // The card must be honest about which mode is which.
+  assert(card.includes("omnimod-mcp serve"), "card must tell the user how to run it visibly");
+
+  const banner = serveBanner();
+  assert(banner.includes("SERVER RUNNING"), "serve banner must say the server is running");
+  assert(/closing this window|Close this window|close this window/i.test(banner), "serve banner must say how to stop it");
+  assert(/Ctrl\+C/i.test(banner), "serve banner must mention Ctrl+C");
+  assert(/Do NOT type/i.test(banner), "serve banner must warn that stdin is the data channel");
+
+  const help = helpText();
+  for (const cmd of ["serve", "setup", "doctor", "selfcheck"]) {
+    assert(help.includes(cmd), `help text does not document "${cmd}"`);
+  }
+  process.stderr.write(
+    `  terminal: version ${MCP_VERSION} matches package.json; card carries ` +
+      `${9} client blocks + all connection fields; serve banner + help verified
+`,
   );
 
   // ------------------------------------------------------------------

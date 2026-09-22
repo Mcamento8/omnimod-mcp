@@ -64,7 +64,7 @@ import { dirname, isAbsolute, resolve } from "node:path";
 import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-import { config, baseUrl, describeConfig, DEFAULT_FORGE_COMPAT_REPO, DEFAULT_COMMAND_BLOCKS_REPO } from "./config.js";
+import { config, MCP_VERSION, baseUrl, describeConfig, DEFAULT_FORGE_COMPAT_REPO, DEFAULT_COMMAND_BLOCKS_REPO } from "./config.js";
 import { bridge, BridgeError } from "./bridge.js";
 import { translateBlock, translateItem, searchNames, colorMeta, COLOR_NAMES, WOOD_NAMES } from "./translate.js";
 import { buildBatch, safeBatchFileName, type Op } from "./ops.js";
@@ -92,7 +92,7 @@ import { join } from "node:path";
 const server = new McpServer(
   {
     name: "omnimod-mcp",
-    version: "1.6.0",
+    version: MCP_VERSION,
   },
   { capabilities: { tools: {}, resources: {}, prompts: {} } },
 );
@@ -2478,8 +2478,20 @@ server.tool(
 export async function startServer(): Promise<void> {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  // Heartbeat to stderr; stdout is reserved for MCP framing.
-  console.error(`[omnimod-mcp] connected. ${describeConfig().replace(/\n/g, " | ")}`);
+  // stderr, never stdout: stdout is the JSON-RPC channel and anything written
+  // there that is not a protocol frame corrupts the session. A client shows
+  // these lines in its MCP log; `serve` shows them in the window.
+  console.error(
+    [
+      `[omnimod-mcp] v${MCP_VERSION} connected over stdio.`,
+      `  bridge  : ${baseUrl()}${config.token ? "" : "  (no pairing token yet — run omni_pair)"}`,
+      `  project : ${config.projectRoot ?? "(not set)"}`,
+      `  worlds  : ${config.worldsDir ?? "(derived)"}`,
+      `  work    : ${config.workDir}`,
+      `  assets  : 3D=${config.assetLibraryRepoUrl ? "linked" : "unlinked"} sound=${config.sfxRepoUrl ? "linked" : "unlinked"}`,
+      `  stop    : close this window / Ctrl+C, or let the client close stdin`,
+    ].join("\n"),
+  );
 }
 
 export const __server = server;
